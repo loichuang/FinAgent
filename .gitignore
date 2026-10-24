@@ -1,0 +1,19 @@
+# Secrets: API keys and SEC contact address live here, never in the code
+.env
+
+# Downloaded 10-K filings and XBRL facts, reproducible from the scripts
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
