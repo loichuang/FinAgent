@@ -27,8 +27,8 @@ def _table_to_text(table) -> str:
             text = td.get_text(" ", strip=True)
             if not text:
                 continue
-            if cells and cells[-1] == "$":
-                cells[-1] += text  # "$" and "391,035" sit in two cells
+            if cells and cells[-1] in ("$", "("):
+                cells[-1] += text  # "$" and "391,035" sit in two cells, so may "(" and "259"
             elif cells and text in ("%", ")%", ")"):
                 cells[-1] += text  # so do "(8" and ")%"
             else:
@@ -37,6 +37,8 @@ def _table_to_text(table) -> str:
             rows.append(cells)
     if not rows:
         return ""  # layout table with no text
+    if len(rows) == 1:
+        return "\n" + " | ".join(rows[0]) + "\n"  # a one-row table is layout, not data
 
     width = max(len(cells) for cells in rows)
     lines = []
@@ -67,6 +69,7 @@ def html_to_text(html: str, noise: list[str] = NOISE) -> str:
     for pattern in noise:
         text = re.sub(rf"^ ?{pattern} ?$", "", text, flags=re.MULTILINE)
     text = re.sub(r"\[TABLE\]\s*\[/TABLE\]", "", text)  # tables that only held a page header
+    text = re.sub(r"\(\s*([\d.,]+)\s*\)", r"(\1)", text)  # negative amounts: "( 259 )" -> "(259)"
     text = re.sub(r"\n\s*\n+", "\n\n", text)
     # a page break split this sentence: no end punctuation before, a lowercase word after
     text = re.sub(r"(?<![.:;!?\s])\s*\n\n ?(?=[a-z][a-z])", " ", text)

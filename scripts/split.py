@@ -15,3 +15,6 @@ for text_dir in sorted((DATA / "text").iterdir()):
             (out / f"{item}.txt").write_text(section, encoding="utf-8")
         sizes = ", ".join(f"{item} {len(section):,}" for item, section in items.items())
         print(f"{ticker} {path.stem}: {sizes}")
+        heading = items["8"].split(".", 1)[0]
+        if heading.lower() != "item 8":
+            print(f"    statements taken from {heading}")

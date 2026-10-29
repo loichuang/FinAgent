@@ -36,3 +36,14 @@ def test_page_break_is_glued_back():
     assert "\n8\n" not in text
     # "iPhone" starts with a lowercase letter but is a heading, it stays on its own line
     assert "products.\n\niPhone\n\niPhone net sales were flat." in text
+
+
+def test_one_row_table_and_negative_amount():
+    html = """<table><tr><td>Item 1.</td><td>Business</td></tr></table>
+<table>
+<tr><td></td><td>2026</td><td>2025</td></tr>
+<tr><td>Interest expense</td><td>(</td><td>259</td><td>)</td><td>(</td><td>247</td><td>)</td></tr>
+</table>"""
+    text = html_to_text(html)
+    assert text.startswith("Item 1. | Business\n")  # a one-row table is plain text
+    assert "Interest expense | (259) | (247)" in text
