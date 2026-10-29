@@ -5,7 +5,7 @@ from pathlib import Path
 from finagent import edgar
 
 DATA = Path(__file__).resolve().parent.parent / "data"
-TICKERS = ["AAPL"]
+TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"]
 FILED_BEFORE = "2026-10-29"  # freezes the corpus, new 10-Ks are filed every year
 
 for ticker in TICKERS:

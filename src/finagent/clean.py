@@ -9,6 +9,15 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 BLOCKS = ["p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "br"]
 
+# Lines that only exist because a 10-K is laid out in pages, matched as whole lines
+NOISE = [
+    r"Table of Contents(?: \| .+)?",   # link back to the contents, Alphabet adds its name
+    r".+ \| \d{4} Form 10-K \| \d+",   # footer: "Apple Inc. | 2024 Form 10-K | 21"
+    r"PART I{1,3}V?",                   # Part repeated on every page
+    r"Item \d+[A-C]?",                  # Item repeated on every page, no dot unlike a heading
+    r"\d{1,3}\.?",                      # page number
+]
+
 
 def _table_to_text(table) -> str:
     rows = []
@@ -41,8 +50,8 @@ def _table_to_text(table) -> str:
     return "\n[TABLE]\n" + "\n".join(lines) + "\n[/TABLE]\n"
 
 
-def html_to_text(html: str, footer: str | None = None) -> str:
-    """Visible text of a 10-K, one block per line, footer lines removed."""
+def html_to_text(html: str, noise: list[str] = NOISE) -> str:
+    """Visible text of a 10-K, one block per line, page headers and footers removed."""
     soup = BeautifulSoup(html, "lxml")
     for tag in soup.find_all(["head", "ix:header"]):
         tag.decompose()
@@ -54,8 +63,11 @@ def html_to_text(html: str, footer: str | None = None) -> str:
         tag.insert_after("\n")
 
     text = soup.get_text()
-    if footer:
-        text = re.sub(footer, "", text)
     text = re.sub(r"[ \t\xa0]+", " ", text)
+    for pattern in noise:
+        text = re.sub(rf"^ ?{pattern} ?$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\[TABLE\]\s*\[/TABLE\]", "", text)  # tables that only held a page header
     text = re.sub(r"\n\s*\n+", "\n\n", text)
+    # a page break split this sentence: no end punctuation before, a lowercase word after
+    text = re.sub(r"(?<![.:;!?\s])\s*\n\n ?(?=[a-z][a-z])", " ", text)
     return text.strip()

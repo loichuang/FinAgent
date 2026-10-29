@@ -10,7 +10,9 @@ Item 7A. | Market Risk | 27
 Item 8. | Financial Statements | 28
 [/TABLE]
 
-Item 1. Business
+[TABLE]
+Item 1. | Business
+[/TABLE]
 Apple designs smartphones.
 
 ITEM 1A. RISK FACTORS
@@ -32,7 +34,8 @@ None."""
 def test_split_items():
     items = split_items(TEXT)
     assert list(items) == ["1", "1A", "7", "8"]
-    assert items["1"] == "Item 1. Business\nApple designs smartphones."
+    assert items["1"].startswith("Item 1. | Business")  # Amazon puts its headings in a table
+    assert items["1"].endswith("Apple designs smartphones.")
     assert items["1A"].endswith("Supply chains may fail.")
     assert "Net sales grew" in items["7"]
     assert "Interest rates" not in items["7"]  # Item 7 stops where 7A starts

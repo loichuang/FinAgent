@@ -10,16 +10,29 @@ HTML = """<html><head><title>aapl-20240928</title></head><body>
 </table>
 <table><tr><td> </td></tr></table>
 <p>Apple Inc. | 2024 Form 10-K | 21</p>
+<p>Our ability to compete depends on what customers and partners will</p>
+<p>8</p>
+<table><tr><td>Table of Contents</td><td>Alphabet Inc.</td></tr></table>
+<p>Item 7</p>
+<p>not provided by our products.</p>
+<p>iPhone</p>
+<p>iPhone net sales were flat.</p>
 </body></html>"""
-
-FOOTER = r"Apple Inc\. \| \d{4} Form 10-K \| \d+"
 
 
 def test_html_to_text():
-    text = html_to_text(HTML, FOOTER)
+    text = html_to_text(HTML)
     assert "Net sales grew." in text
     assert "| 2024 | 2023" in text
     assert "Total net sales | $391,035 | $383,285" in text
-    for junk in ["aapl-20240928", "P1Y", "hidden fact", "Form 10-K"]:
+    for junk in ["aapl-20240928", "P1Y", "hidden fact", "Form 10-K", "Table of Contents", "Item 7"]:
         assert junk not in text
     assert text.count("[TABLE]") == 1  # the empty layout table is gone
+
+
+def test_page_break_is_glued_back():
+    text = html_to_text(HTML)
+    assert "customers and partners will not provided by our products." in text
+    assert "\n8\n" not in text
+    # "iPhone" starts with a lowercase letter but is a heading, it stays on its own line
+    assert "products.\n\niPhone\n\niPhone net sales were flat." in text

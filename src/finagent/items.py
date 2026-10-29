@@ -3,9 +3,9 @@ import re
 
 ITEMS = ("1", "1A", "7", "8")
 
-# A heading is a line of its own: "Item 7. Management's Discussion..."
-# The table of contents holds the same words in a table row: "Item 7. | ... | 21"
-HEADING = re.compile(r"^item\s+(\d+[a-c]?)\.(?!.*\|)", re.IGNORECASE | re.MULTILINE)
+# A heading starts its line: "Item 7. Management's Discussion..."
+# A table of contents row ends with its page number: "Item 7. | ... | 21"
+HEADING = re.compile(r"^item\s+(\d+[a-c]?)\.(?!.*\|\s*\d+\s*$)", re.IGNORECASE | re.MULTILINE)
 
 
 def split_items(text: str, wanted: tuple[str, ...] = ITEMS) -> dict[str, str]:
