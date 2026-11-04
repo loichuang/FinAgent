@@ -28,5 +28,5 @@ def test_records():
     id_list = [r["id"] for r in result]
     assert id_list == [f"NVDA_2025_7_{n}" for n in range(1, len(result) + 1)]
     assert all(r["fiscal_year"] == 2025 for r in result)
-    assert all(r["ticker"] == "NVDA" and r["period_end"]== "2025-01-26" and r["item"] == "7" for r in result)
+    assert all((r["ticker"], r["period_end"], r["item"]) == ("NVDA", "2025-01-26", "7") for r in result)
     assert [r["text"] for r in result] == chunk(text)
