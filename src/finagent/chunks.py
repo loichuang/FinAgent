@@ -49,6 +49,23 @@ def chunk (text: str, size: int = 300, overlap: int = 50) -> list[str]:
     if current:
         passages.append("\n".join(current))
     return passages
-        
+
+def records(ticker: str, period_end: str, item: str, text: str) -> list[dict] :
+    """The passages of one Item , each with its metadata"""
+    records = []
+    year = int(period_end[:4])
+    passages = chunk(text)
+    for count, passage in enumerate(passages, start=1):
+        record = {
+            "id" : f"{ticker}_{year}_{item}_{count}",
+            "ticker" : ticker,
+            "fiscal_year": year,
+            "period_end": period_end,
+            "item": item,
+            "text" : passage
+        }
+        records.append(record)
+    return records
+
     
-        
+    
