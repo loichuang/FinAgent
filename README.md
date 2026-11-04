@@ -24,6 +24,7 @@ before 29 October 2026, plus their XBRL facts. Each step rebuilds its folder fro
 | `data/raw/`, `data/xbrl/` | 10-K HTML and XBRL facts as served by EDGAR, never modified | `scripts/download.py` |
 | `data/text/` | Visible text, tables flattened into `cell \| cell` rows | `scripts/clean.py` |
 | `data/items/` | Items 1, 1A, 7 and 8, one file each | `scripts/split.py` |
+| `data/passages.jsonl` | One passage per line with its ticker, fiscal year, period end, Item and id | `scripts/passages.py` |
 
 The rules rely on what the 10-K format imposes, not on one company's habits:
 
@@ -37,6 +38,10 @@ The rules rely on what the 10-K format imposes, not on one company's habits:
   balance sheet title: Item 8 for most companies, Item 15 for Nvidia, whose Item 8 only refers to them
 - **Anything unexpected stops the pipeline**: a missing or repeated Item, a heading that does not
   name its Item, zero or several balance sheet titles
+- **Passages are at most 300 words**, cut on line breaks with a 50-word overlap, numbered from 1
+  within their Item: `AAPL_2024_7_1` is the first passage of Item 7 in Apple's fiscal 2024 10-K
+- **The fiscal year is the year the period ends**, as the companies name it: Nvidia's year ending
+  26 January 2025 is fiscal 2025. The exact `period_end` is kept, since it is the key that matches XBRL facts
 
 ## Setup
 
@@ -48,6 +53,7 @@ python3 -m venv .venv
 .venv/bin/python scripts/download.py   # 10-K filings to data/raw/, XBRL facts to data/xbrl/
 .venv/bin/python scripts/clean.py
 .venv/bin/python scripts/split.py
+.venv/bin/python scripts/passages.py
 ```
 
 ## License
