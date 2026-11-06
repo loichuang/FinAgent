@@ -2,6 +2,7 @@
 
 from finagent.search import load_passages
 from finagent.xbrl import annual_values, unit
+import random
 from datetime import date
 
 # Company names as a user would write them. If the corpus grows, read "entityName"
@@ -42,6 +43,15 @@ CONCEPTS = {
 }
 
 
+# Phrasings of the same question. Fields: company, label, date (written out), year.
+# "fiscal {year}" follows each company's own naming: Nvidia's fiscal 2025 ends in January 2025.
+TEMPLATES = [
+    "What was {company}'s {label} for the fiscal year ended {date}?",
+    "How much {label} did {company} report for fiscal {year}?",
+    "In its 10-K for fiscal {year}, what {label} did {company} report?",
+]
+
+
 def period_ends() -> dict[str, list[tuple[str, int]]]:
     """For each ticker, its (period end, fiscal year) pairs, read from the corpus."""
     ends = {}
@@ -70,17 +80,18 @@ def concept_questions(label: str) -> list[dict]:
                 continue
             value = annual_values(ticker,concept)[period_end]
 
-            questions.append({
-                "id": f"{ticker}_{period_end}_{concept}",
-                "question": f"What was {names[ticker]}'s {label} for the fiscal year "
-                            f"ended {_long_date(period_end)}?",
-                "ticker": ticker,
-                "fiscal_year": fiscal_year,
-                "period_end": period_end,
-                "concept": concept,
-                "value": value,
-                "unit": unit(ticker, concept),
-            })
+            # One question per phrasing, the id ends with the template number
+            for numero, gabarit in enumerate(TEMPLATES) : 
+                questions.append({
+                    "id": f"{ticker}_{period_end}_{concept}_{numero}",
+                    "question": gabarit.format(company=names[ticker],label = label, date= _long_date(period_end),year= fiscal_year),
+                    "ticker": ticker,
+                    "fiscal_year": fiscal_year,
+                    "period_end": period_end,
+                    "concept": concept,
+                    "value": value,
+                    "unit": unit(ticker, concept),
+                })
     return questions
 
 
@@ -88,3 +99,35 @@ def _long_date(iso: str) -> str:
     """A YYYY-MM-DD date as a person writes it: "2024-09-28" gives "September 28, 2024"."""
     d = date.fromisoformat(iso)
     return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+
+def all_questions() -> list[dict]:
+    """The questions of every label in CONCEPTS."""
+    return [q for label in CONCEPTS for q in concept_questions(label)]
+
+
+def assign_split(questions: list[dict], test_share: float = 0.5, seed: int = 0) -> None:
+    """Add a "split" field, "tuning" or "test", to every question, in place.
+
+    The split is drawn per fact (ticker, period end, concept), never per question:
+    the phrasings of one fact all go to the same side, so the test set holds no
+    answer already seen during tuning.
+    """
+    # Distinct facts, sorted so that the shuffle always starts from the same order
+    facts = sorted({(q["ticker"], q["period_end"], q["concept"]) for q in questions})
+
+    # Same seed, same shuffle
+    rng = random.Random(seed)
+    rng.shuffle(facts)
+
+    # The first test_share of the shuffled facts go to test
+    f = int(len(facts) * test_share)
+    test_facts = set(facts[:f])
+
+    for q in questions : 
+        fact = (q["ticker"], q["period_end"], q["concept"])
+        if fact in test_facts :  
+            q["split"]  = "test"
+        else : 
+            q["split"] = "tuning"
+
