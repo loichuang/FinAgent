@@ -23,3 +23,9 @@ def test_instant_and_per_share_values():
 
 def test_unreported_concept_is_empty():
     assert annual_values("NVDA", "NotAConcept") == {}
+
+
+def test_value_of_the_report_of_that_year_wins():
+    # After the 10-for-1 split of June 2024, the fiscal 2025 10-K restates fiscal 2024 EPS
+    # to 1.19; the fiscal 2024 10-K, which the RAG reads, wrote 11.93
+    assert annual_values("NVDA", "EarningsPerShareDiluted")["2024-01-28"] == 11.93

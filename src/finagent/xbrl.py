@@ -3,7 +3,10 @@
 Traps handled here, so that question templates never see them:
 - the `fy` field is the fiscal year of the filing, not of the value (Apple's 2023 revenue
   is tagged fy 2025 because the 2025 10-K repeats it), so values are keyed by period end;
-- the same value is repeated by every later 10-K that compares against it;
+- the same value is repeated by every later 10-K that compares against it, sometimes
+  restated: after Nvidia's 10-for-1 split of June 2024, the fiscal 2025 10-K rewrites the
+  fiscal 2024 diluted EPS from 11.93 to 1.19. The value of the 10-K that first reported the
+  period is kept, since a question about that report must find its answer in it;
 - some facts tagged fp "FY" cover a single quarter, so durations are checked;
 - balance sheet items (Assets) are instants with no start date.
 """
@@ -38,23 +41,24 @@ def annual_values(ticker: str, concept: str) -> dict[str, float]:
     """Value of a concept for each fiscal year, keyed by period end ("2024-09-28").
 
     Only 10-K facts are kept. A flow (revenue, net income) must cover a full fiscal year;
-    a stock (assets) is read at the period end. When a value was restated, the most
-    recently filed one wins. An empty dict means the company does not report the concept.
+    a stock (assets) is read at the period end. When a later 10-K restated a value, the
+    first filed one wins: it is the one written in the report of that fiscal year.
+    An empty dict means the company does not report the concept.
     """
     if concept not in _facts(ticker):
         return {}
     units = _facts(ticker)[concept]["units"]
     unit = next(iter(units))  # USD, or USD/shares for earnings per share
-    latest = {}  # period end -> (filed, value)
+    first = {}  # period end -> (filed, value)
     for fact in units[unit]:
         if fact.get("form") != "10-K":
             continue
         if "start" in fact and not MIN_DAYS <= _days(fact["start"], fact["end"]) <= MAX_DAYS:
             continue
         end = fact["end"]
-        if end not in latest or fact["filed"] > latest[end][0]:
-            latest[end] = (fact["filed"], fact["val"])
-    return {end: value for end, (_, value) in sorted(latest.items())}
+        if end not in first or fact["filed"] < first[end][0]:
+            first[end] = (fact["filed"], fact["val"])
+    return {end: value for end, (_, value) in sorted(first.items())}
 
 
 def unit(ticker: str, concept: str) -> str:
