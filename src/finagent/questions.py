@@ -106,6 +106,35 @@ def all_questions() -> list[dict]:
     return [q for label in CONCEPTS for q in concept_questions(label)]
 
 
+def heldout_questions(questions: list[dict], template: str) -> list[dict]:
+    """One extra question per test fact, written with a phrasing never seen in tuning.
+
+    Call it after assign_split. The phrasing is written by hand and kept out of the
+    tuning set, so the test measures whether the query cleaning works on a wording
+    it was not designed on, not only on the three TEMPLATES.
+    """
+    label_of = {c: label for label, concepts in CONCEPTS.items() for c in concepts}
+    extra = []
+    seen = set()
+    for q in questions:
+        fact = (q["ticker"], q["period_end"], q["concept"])
+        if q["split"] != "test" or fact in seen:
+            continue
+        seen.add(fact)
+        extra.append({
+            "id": f"{q['ticker']}_{q['period_end']}_{q['concept']}_heldout",
+            "question": template.format(
+                company=names[q["ticker"]],
+                label=label_of[q["concept"]],
+                date=_long_date(q["period_end"]),
+                year=q["fiscal_year"],
+            ),
+            **{k: v for k, v in q.items() if k not in ("id", "question")},
+            "heldout": True,
+        })
+    return extra
+
+
 def assign_split(questions: list[dict], test_share: float = 0.5, seed: int = 0) -> None:
     """Add a "split" field, "tuning" or "test", to every question, in place.
 
