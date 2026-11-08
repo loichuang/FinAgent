@@ -54,6 +54,8 @@ python3 -m venv .venv
 .venv/bin/python scripts/clean.py
 .venv/bin/python scripts/split.py
 .venv/bin/python scripts/passages.py
+.venv/bin/python scripts/questions.py  # numeric questions with their XBRL answers
+.venv/bin/python scripts/evaluate_retrieval.py   # recall at k on the tuning set (--test at the end only)
 ```
 
 ## License
