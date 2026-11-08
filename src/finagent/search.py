@@ -30,6 +30,8 @@ def search(
     ticker: str | None = None,
     fiscal_year: int | None = None,
     k: int = 5,
+    k1: float = 1.2,  # Elasticsearch default; on the plateau of the grid (scripts/tune_bm25.py)
+    b: float = 0.75,
 ) -> list[dict]:
     """The k passages that best match the query, among those of this company and year.
 
@@ -43,6 +45,6 @@ def search(
     if len(candidates) == 0 : 
         return []
     candidates_tokenized = [tokenize(c["text"]) for c in candidates]
-    bm25 = BM25Okapi(candidates_tokenized)
+    bm25 = BM25Okapi(candidates_tokenized,k1=k1,b=b)
     scores = bm25.get_scores(tokenize(query)).argsort()[-k:][::-1]
     return [candidates[i] for i in scores]
