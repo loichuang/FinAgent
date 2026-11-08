@@ -33,7 +33,7 @@ def cleaned(qs: list[dict]) -> list[dict]:
 
 def row(name: str, qs: list[dict]) -> None:
     scores = "  ".join(f"R@{k} {recall_at_k(qs, passages, k):.3f}" for k in KS)
-    print(f"{name:<28}{scores}   ({len(qs)} questions)")
+    print(f"{name:<36}{scores}   ({len(qs)} questions)")
 
 
 # Groups: the three templates, then the held-out phrasing (test set only)
