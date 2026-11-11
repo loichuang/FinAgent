@@ -49,3 +49,36 @@ def test_no_measurable_question_raises():
     # no_answer alone: expected ValueError
     with pytest.raises(ValueError):
         recall_at_k([no_answer],passages)
+
+
+# ---- verdict (step 8) --------------------------------------------------------
+from finagent.evaluate import verdict
+
+
+def _result(found=True, number=None):
+    return {"found": found, "number": number}
+
+
+def test_verdict_right_within_one_percent():
+    assert verdict(_result(number=383_285e6), 383_285e6) == "right"
+    assert verdict(_result(number=100.9), 100) == "right"
+
+
+def test_verdict_wrong_beyond_one_percent():
+    # the 2022 column instead of 2023: 394,328 against 383,285
+    assert verdict(_result(number=394_328e6), 383_285e6) == "wrong"
+    assert verdict(_result(number=101), 100) == "wrong"
+
+
+def test_verdict_wrong_sign():
+    assert verdict(_result(number=-11_683e6), 11_683e6) == "wrong"
+
+
+def test_verdict_abstained_and_rejected():
+    assert verdict(_result(found=False), 1.0) == "abstained"
+    assert verdict(_result(found=True, number=None), 1.0) == "rejected"
+
+
+def test_verdict_expected_zero():
+    assert verdict(_result(number=0.0), 0) == "right"
+    assert verdict(_result(number=5.0), 0) == "wrong"

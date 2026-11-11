@@ -33,3 +33,24 @@ def recall_at_k(questions : list[dict], passages: list[dict], k: int = 5, k1: fl
     return R/q
         
         
+
+TOLERANCE = 0.01  # a number within 1 % of the XBRL value counts as right (theorie/etape7, §9)
+VERDICTS = ("right", "wrong", "abstained", "rejected")
+
+
+def verdict(result: dict, expected: float, tolerance: float = TOLERANCE) -> str:
+    """Grade one answer of generate.answer against the XBRL value.
+
+    abstained  the model said found = false
+    rejected   the model gave a number, but a check of step 7 refused it (no number returned)
+    right      the number is within `tolerance` of the XBRL value, relatively
+    wrong      a number was returned and is off: an invented or misread figure
+    """
+    if not result["found"]:
+        return "abstained"
+    if result["number"] is None:
+        return "rejected"
+    if expected == 0:
+        return "right" if result["number"] == 0 else "wrong"
+    gap = abs(result["number"] - expected) / abs(expected)
+    return "right" if gap < tolerance else "wrong"

@@ -13,13 +13,11 @@ from pathlib import Path
 from finagent import llm
 from finagent.embed import load_embeddings
 from finagent.generate import answer, build_user
-from finagent.query import clean_query
-from finagent.questions import names
-from finagent.search import dense_search, load_passages, rrf, search
+from finagent.pipeline import retrieve
+from finagent.search import load_passages
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 DEFAULT_ID = "AAPL_2023-09-30_RevenueFromContractWithCustomerExcludingAssessedTax_0"
-K, DEPTH = 10, 50  # 10 passages for the LLM (decided at step 6), fusion of the 50 first of each
 # Haiku 5.5, dollars per million tokens (Anthropic price list cached on 6 Oct. 2026)
 PRICE_IN, PRICE_OUT = 0.10, 0.50
 
@@ -34,11 +32,7 @@ passages = load_passages()
 embeddings = load_embeddings()
 
 # Step 6: RRF of BM25 (cleaned question) and dense (raw question), filtered on company and year
-query = clean_query(question["question"], names[question["ticker"]])
-lexical = search(query, passages, ticker=question["ticker"], fiscal_year=question["fiscal_year"], k=DEPTH)
-dense = dense_search(question["question"], passages, embeddings,
-                     ticker=question["ticker"], fiscal_year=question["fiscal_year"], k=DEPTH)
-retrieved = rrf([lexical, dense], k=K)
+retrieved = retrieve(question, passages, embeddings)
 
 print(f"Question : {question['question']}")
 print(f"Expected : {question['value']:,.0f} {question['unit']} (XBRL)\n")
