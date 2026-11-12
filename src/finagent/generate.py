@@ -41,8 +41,12 @@ the passages given in the user message. Never use your own knowledge.
 Rules:
 - Find the figure that answers the question, for the exact fiscal year asked. Tables often \
 show several years side by side: pick the column of the year asked.
-- Copy the number exactly as it is written in the passage (for example "383,285" or \
-"(1,234)"). Do not convert, round or compute it.
+- Copy the digits exactly as they are written in the passage (for example "383,285"). Do \
+not convert, round or compute them. In a financial statement, parentheses give the sign in \
+the direction of the row label: "(7,120)" on "Benefit (provision) for income taxes" is a \
+provision of 7,120. If the question asks for the same quantity as the row (net income, other \
+income), keep the parentheses. If it asks for the opposite one (an expense, a payment, capital \
+expenditures shown as a cash outflow), drop them.
 - Give its scale, read from the table header or the text ("In millions" -> "millions"). If \
 no scale is stated, use "units".
 - Give the id of the passage you copied the number from.
