@@ -111,6 +111,12 @@ print()
 report("all", rows)
 report("passage retrieved", [r for r in rows if r["retrieval_hit"]])
 report("passage missed by retrieval", [r for r in rows if not r["retrieval_hit"]])
+if split == "test":
+    # The held-out phrasing was never seen while tuning: a gap with the seen phrasings
+    # would mean the pipeline fits the wording of the tuning questions
+    print()
+    report("phrasings seen while tuning", [r for r in rows if not r["id"].endswith("_heldout")])
+    report("held-out phrasing", [r for r in rows if r["id"].endswith("_heldout")])
 print("\nright = within 1 % of XBRL. precision = right / (right + wrong): how far a given number can be trusted.")
 print(f"Spent : ${cost:.4f} ({tokens_in:,} tokens in, {tokens_out:,} out, cached answers free)")
 print(f"Details: data/answers_{split}.jsonl")
