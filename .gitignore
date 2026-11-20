@@ -2,7 +2,10 @@
 .env
 
 # Downloaded 10-K filings and XBRL facts, reproducible from the scripts
-data/
+data/*
+# Except the held-out phrasing: committed before any measurement, so its date proves
+# it was written before the results were known
+!data/heldout_template.txt
 
 # Python
 __pycache__/
