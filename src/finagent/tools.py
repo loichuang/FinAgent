@@ -58,9 +58,9 @@ FACT_TOOL = {
 # benchmark (all_questions), and a new label there would add questions and reshuffle the frozen
 # tuning/test split. "optional": the company may not report the item because it has none, so
 # absent means 0. Otherwise absent is an error: a 0 would distort the ratio without a sound.
-# Each optional rule was checked against the 10-K text (CAHIER_DES_CHARGES.md 4.4, 22 Nov.).
+# Each optional rule was checked against the 10-K text.
 RATIO_CONCEPTS = {
-    # Debt and cash definitions of the Tome II (ch. 1, section 1.3)
+    # Debt: all financial debt, whatever its maturity. Cash: cash and current securities
     "long-term debt including current portion": {"xbrl": ["LongTermDebt"], "optional": False},
     # Microsoft and Nvidia 2026: no commercial paper outstanding, nothing tagged
     "commercial paper": {"xbrl": ["CommercialPaper"], "optional": True},
@@ -84,7 +84,7 @@ RATIO_CONCEPTS = {
 
 def avg(label: str) -> tuple[str, str]:
     """Mark a balance sheet label to be averaged over the fiscal year (opening and closing),
-    as the Tome II does for ROE, ROIC and Du Pont: in RATIOS, write avg("total assets")."""
+    for ROE, ROIC and Du Pont: in RATIOS, write avg("total assets")."""
     return ("avg", label)
 
 
@@ -98,9 +98,8 @@ def _sbc_to_fcf(sbc: float, cfo: float, capex: float) -> float:
     return sbc / fcf
 
 
-# Ratio name -> the CONCEPTS labels it needs, in the order of the formula's arguments.
-# Python computes every ratio: the model never does arithmetic. Group "the business" of the
-# list chosen on 20 Nov. (CAHIER_DES_CHARGES.md 4.4); the other groups come next.
+# Ratio name -> the labels it needs, in the order of the formula's arguments.
+# Python computes every ratio: the model never does arithmetic.
 CFO, CAPEX = "net cash provided by operating activities", "capital expenditures"
 RATIOS = {
     "gross margin": {"labels": ["revenue", "cost of revenue"],
