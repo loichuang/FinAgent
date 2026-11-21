@@ -2,7 +2,8 @@ import pytest
 
 import finagent.tools as tools
 from finagent.questions import CONCEPTS, names, period_ends
-from finagent.tools import FACT_TOOL, NOTES, RATIO_TOOL, RATIOS, _resolve_period, get_fact, get_ratio
+from finagent.tools import (FACT_TOOL, NOTES, RATIO_CONCEPTS, RATIO_TOOL, RATIOS, _component,
+                            _opening, _resolve_period, _value, avg, get_fact, get_ratio)
 
 
 # Nvidia names its fiscal years after the January in which they end
@@ -167,3 +168,41 @@ def test_ratio_card_lists_every_ratio_and_shares_the_period_arguments():
     properties = RATIO_TOOL["input_schema"]["properties"]
     assert properties["ratio"]["enum"] == list(RATIOS)
     assert properties["fiscal_year"] == FACT_TOOL["input_schema"]["properties"]["fiscal_year"]
+
+
+# --- Ratio plumbing: second concept table, absence rules, averages ---
+
+
+def test_ratio_concepts_stay_out_of_the_benchmark():
+    # A label in both tables would change the questions of the frozen benchmark
+    assert not set(RATIO_CONCEPTS) & set(CONCEPTS)
+
+
+def test_optional_label_absent_is_zero():
+    # Microsoft 2026: no commercial paper outstanding; Amazon: no dividend
+    assert _value("MSFT", "commercial paper", "2026-06-30", 2026) == (0.0, "USD")
+    assert _value("AMZN", "dividends paid", "2025-12-31", 2025) == (0.0, "USD")
+
+
+def test_required_label_absent_is_an_error_never_zero():
+    # Nvidia 2026 securities exist (51,951) but under a concept companyfacts leaves out
+    with pytest.raises(ValueError, match="current marketable securities"):
+        _value("NVDA", "current marketable securities", "2026-01-25", 2026)
+    with pytest.raises(ValueError, match="inventory"):
+        _value("GOOGL", "inventory", "2025-12-31", 2025)
+
+
+def test_alias_in_ratio_concepts():
+    # Microsoft reports its current securities as ShortTermInvestments
+    assert _value("MSFT", "current marketable securities", "2025-06-30", 2025)[0] > 0
+
+
+def test_opening_is_the_previous_fiscal_year_end():
+    assert _opening("AAPL", "2025-09-27") == "2024-09-28"
+    assert _opening("NVDA", "2024-01-28") == "2023-01-29"  # first year of the corpus
+
+
+def test_average_is_the_mean_of_opening_and_closing():
+    closing = _value("AAPL", "total stockholders' equity", "2025-09-27", 2025)[0]
+    opening = _value("AAPL", "total stockholders' equity", "2024-09-28", 2024)[0]
+    assert _component("AAPL", avg("total stockholders' equity"), "2025-09-27", 2025) == (closing + opening) / 2

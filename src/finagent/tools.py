@@ -5,7 +5,7 @@ arguments, and the code runs the lookup or the computation and sends the result 
 """
 
 from finagent.questions import CONCEPTS, names, period_ends
-from finagent.xbrl import annual_values, unit
+from finagent.xbrl import MAX_DAYS, MIN_DAYS, _days, annual_values, unit
 
 
 # The tool card the model reads at every turn of the loop. The allowed values come from
@@ -53,6 +53,40 @@ FACT_TOOL = {
         "additionalProperties": False,
     },
 }
+
+# Labels the ratios need beyond CONCEPTS. Kept apart on purpose: CONCEPTS also generates the
+# benchmark (all_questions), and a new label there would add questions and reshuffle the frozen
+# tuning/test split. "optional": the company may not report the item because it has none, so
+# absent means 0. Otherwise absent is an error: a 0 would distort the ratio without a sound.
+# Each optional rule was checked against the 10-K text (CAHIER_DES_CHARGES.md 4.4, 22 Nov.).
+RATIO_CONCEPTS = {
+    # Debt and cash definitions of the Tome II (ch. 1, section 1.3)
+    "long-term debt including current portion": {"xbrl": ["LongTermDebt"], "optional": False},
+    # Microsoft and Nvidia 2026: no commercial paper outstanding, nothing tagged
+    "commercial paper": {"xbrl": ["CommercialPaper"], "optional": True},
+    # Amazon only, under 1 % of its debt
+    "short-term borrowings": {"xbrl": ["ShortTermBorrowings"], "optional": True},
+    # Nvidia 2026 tags it with its own concept, absent from companyfacts: an error, not a 0
+    "current marketable securities": {"xbrl": ["MarketableSecuritiesCurrent",
+                                               "ShortTermInvestments"], "optional": False},
+    # Cycle
+    "accounts receivable": {"xbrl": ["AccountsReceivableNetCurrent"], "optional": False},
+    # Alphabet holds no inventory: DIO and CCC are not applicable to it, never 0
+    "inventory": {"xbrl": ["InventoryNet"], "optional": False},
+    "accounts payable": {"xbrl": ["AccountsPayableCurrent"], "optional": False},
+    # Financing. Amazon pays no dividend: a true 0
+    "dividends paid": {"xbrl": ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock"],
+                       "optional": True},
+    # TODO before the financing group: one Amazon year is missing, check the 10-K text
+    "share repurchases": {"xbrl": ["PaymentsForRepurchaseOfCommonStock"], "optional": False},
+}
+
+
+def avg(label: str) -> tuple[str, str]:
+    """Mark a balance sheet label to be averaged over the fiscal year (opening and closing),
+    as the Tome II does for ROE, ROIC and Du Pont: in RATIOS, write avg("total assets")."""
+    return ("avg", label)
+
 
 def _sbc_to_fcf(sbc: float, cfo: float, capex: float) -> float:
     """Share of free cash flow paid out as stock. A ratio to a negative or zero FCF means
@@ -147,16 +181,44 @@ def _resolve_period(ticker: str, period_end: str, fiscal_year: int) -> tuple[str
 def _value(company: str, label: str, period: str, year: int) -> tuple[float, str]:
     """The value and unit of a label for fiscal `year`, which ends at `period`.
 
-    The first XBRL name of the label that carries a value for this date wins: Apple reports
-    revenue under the first name, Nvidia under the second. Raises ValueError when none does.
+    The label comes from CONCEPTS or RATIO_CONCEPTS. The first XBRL name that carries a value
+    for this date wins: Apple reports revenue under the first name, Nvidia under the second.
+    When none does, an optional label is 0 and any other raises ValueError.
     Shared by get_fact and get_ratio, so both tools read a figure the same way.
     """
-    for xbrl_name in CONCEPTS[label]:
+    if label in CONCEPTS:
+        xbrl_names, optional = CONCEPTS[label], False
+    else:
+        xbrl_names, optional = RATIO_CONCEPTS[label]["xbrl"], RATIO_CONCEPTS[label]["optional"]
+    for xbrl_name in xbrl_names:
         values = annual_values(company, xbrl_name)
         if period in values:
             return values[period], unit(company, xbrl_name)
+    if optional:
+        return 0.0, "USD"
     raise ValueError(f"{names[company]} reports no {label} for fiscal {year} (ended {period}) "
                      f"in FinAgent's data.")
+
+
+def _opening(company: str, period: str) -> str:
+    """The end of the fiscal year before the one ending at `period`: its balance sheet is the
+    opening one. Read from the company's total assets, reported at every year end, and checked
+    to be one fiscal year earlier (52 or 53 weeks)."""
+    earlier = [end for end in annual_values(company, "Assets") if end < period]
+    if not earlier or not MIN_DAYS <= _days(earlier[-1], period) <= MAX_DAYS:
+        raise ValueError(f"{names[company]}: no balance sheet one year before {period} "
+                         f"in FinAgent's data.")
+    return earlier[-1]
+
+
+def _component(company: str, label, period: str, year: int) -> float:
+    """One input of a ratio: the value at `period`, or for avg(label) the mean of the opening
+    and closing balance sheets."""
+    if isinstance(label, tuple):
+        _, name = label
+        opening = _opening(company, period)
+        return (_value(company, name, period, year)[0] + _value(company, name, opening, year - 1)[0]) / 2
+    return _value(company, label, period, year)[0]
 
 
 def get_fact(company: str, concept: str, period_end: str = None, fiscal_year: int = None) -> dict :
@@ -177,6 +239,11 @@ def get_fact(company: str, concept: str, period_end: str = None, fiscal_year: in
             "is_error" : False}
 
 
+def _name(label) -> str:
+    """How a ratio input is written in the result: "average total assets" for avg(...)."""
+    return f"average {label[1]}" if isinstance(label, tuple) else label
+
+
 def get_ratio(company: str, ratio: str, period_end: str = None, fiscal_year: int = None) -> dict:
     """Run the ratio tool: the ratio computed in Python from its XBRL components.
 
@@ -187,14 +254,14 @@ def get_ratio(company: str, ratio: str, period_end: str = None, fiscal_year: int
     try:
         period, year = _resolve_period(company, period_end, fiscal_year)
         # One _value per label, in the order of the formula's arguments
-        components = [_value(company, label, period, year)[0] for label in spec["labels"]]
+        components = [_component(company, label, period, year) for label in spec["labels"]]
         value = spec["formula"](*components)
     except ValueError as error:
         return {"content": f"{names[company]}, {ratio}: {error}",
                 "is_error": True}
 
     latest = " (latest in FinAgent's data)" if period_end is None and fiscal_year is None else ""
-    parts = ", ".join(f"{label} {v:.0f}" for label, v in zip(spec["labels"], components))
+    parts = ", ".join(f"{_name(label)} {v:.0f}" for label, v in zip(spec["labels"], components))
     note = f" Note: {NOTES[(company, ratio)]}" if (company, ratio) in NOTES else ""
     return {"content": f"{names[company]}, {ratio}, fiscal {year} (ended {period}){latest}: "
                        f"{value:.4f} ({value:.1%}). Components in USD: {parts}.{note}",
