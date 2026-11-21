@@ -1,47 +1,10 @@
 """Numeric questions generated from XBRL, each with its exact answer."""
 
+from finagent.concepts import CONCEPTS, names
 from finagent.search import load_passages
 from finagent.xbrl import annual_values, unit
 import random
 from datetime import date
-
-# Company names as a user would write them. If the corpus grows, read "entityName"
-# from data/xbrl/ instead and strip "Inc." or "Corporation".
-names = {
-    "AAPL": "Apple",
-    "AMZN": "Amazon",
-    "GOOGL": "Alphabet",
-    "MSFT": "Microsoft",
-    "NVDA": "Nvidia",
-}
-
-
-# Label in the question -> XBRL concepts that may carry it, in order of preference.
-# For each company and year, the first concept with a value is used.
-# Left out on purpose, because Amazon or Alphabet do not report them under this name:
-# GrossProfit, Liabilities, ResearchAndDevelopmentExpense.
-CONCEPTS = {
-    "revenue": ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues"],
-    "net income": ["NetIncomeLoss"],
-    "operating income": ["OperatingIncomeLoss"],
-    "diluted earnings per share": ["EarningsPerShareDiluted"],
-    "total assets": ["Assets"],
-    "total stockholders' equity": ["StockholdersEquity"],
-    "cash and cash equivalents": ["CashAndCashEquivalentsAtCarryingValue"],
-    "long-term debt": ["LongTermDebtNoncurrent"],
-    "net cash provided by operating activities": ["NetCashProvidedByUsedInOperatingActivities"],
-    # Nvidia's concept also includes intangible assets: the answer is what each company reports
-    "capital expenditures": ["PaymentsToAcquirePropertyPlantAndEquipment",
-                             "PaymentsToAcquireProductiveAssets"],
-    "cost of revenue": ["CostOfGoodsAndServicesSold", "CostOfRevenue"],
-    "income tax expense": ["IncomeTaxExpenseBenefit"],
-    "share-based compensation": ["ShareBasedCompensation"],
-    "weighted average diluted shares outstanding": [
-        "WeightedAverageNumberOfDilutedSharesOutstanding"],
-    "total current assets": ["AssetsCurrent"],
-    "total current liabilities": ["LiabilitiesCurrent"],
-}
-
 
 # Phrasings of the same question. Fields: company, label, date (written out), year.
 # "fiscal {year}" follows each company's own naming: Nvidia's fiscal 2025 ends in January 2025.

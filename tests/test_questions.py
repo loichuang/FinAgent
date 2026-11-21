@@ -1,6 +1,7 @@
 from collections import defaultdict
 
-from finagent.questions import CONCEPTS, TEMPLATES, _long_date, all_questions, assign_split, heldout_questions
+from finagent.concepts import CONCEPTS
+from finagent.questions import TEMPLATES, _long_date, all_questions, assign_split, heldout_questions
 from finagent.xbrl import annual_values
 
 

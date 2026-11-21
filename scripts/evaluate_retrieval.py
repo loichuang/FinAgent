@@ -11,7 +11,7 @@ from pathlib import Path
 from finagent.embed import load_embeddings
 from finagent.evaluate import recall_at_k
 from finagent.query import clean_query
-from finagent.questions import names
+from finagent.concepts import names
 from finagent.search import dense_search, load_passages, rrf, search
 
 DATA = Path(__file__).resolve().parent.parent / "data"

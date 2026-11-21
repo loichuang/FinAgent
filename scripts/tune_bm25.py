@@ -8,7 +8,7 @@ from pathlib import Path
 
 from finagent.evaluate import recall_at_k
 from finagent.query import clean_query
-from finagent.questions import names
+from finagent.concepts import names
 from finagent.search import load_passages
 
 K1_VALUES = [0.9, 1.2, 1.5, 2.0]

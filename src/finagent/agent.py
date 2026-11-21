@@ -13,7 +13,8 @@ the benchmark (phase 2 measure, P2.6).
 """
 import json
 from finagent.llm import EFFORT, MAX_TOKENS, MODEL, LLMRefusal, client
-from finagent.tools import FACT_TOOL, RATIO_TOOL, get_fact, get_ratio
+from finagent.facts import FACT_TOOL, get_fact
+from finagent.ratios import RATIO_TOOL, get_ratio
 
 # The tools the model may call: the cards it reads, and the function behind each name
 TOOL_CARDS = [FACT_TOOL, RATIO_TOOL]

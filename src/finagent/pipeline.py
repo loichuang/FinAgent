@@ -8,7 +8,7 @@ method are fused, and the K best are handed to the LLM (K = 10, decided at step 
 import numpy as np
 
 from finagent.query import clean_query
-from finagent.questions import names
+from finagent.concepts import names
 from finagent.search import dense_search, rrf, search
 
 K, DEPTH = 10, 50
