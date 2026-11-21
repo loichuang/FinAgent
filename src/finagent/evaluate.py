@@ -1,5 +1,6 @@
 from collections.abc import Callable
 
+from finagent.concepts import CONCEPTS
 from finagent.relevance import relevant_ids
 from finagent.search import search
 
@@ -54,3 +55,48 @@ def verdict(result: dict, expected: float, tolerance: float = TOLERANCE) -> str:
         return "right" if result["number"] == 0 else "wrong"
     gap = abs(result["number"] - expected) / abs(expected)
     return "right" if gap < tolerance else "wrong"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: grading the agent (agent.ask) on the same benchmark
+# ---------------------------------------------------------------------------
+
+def agent_verdict(reply: dict, expected: float, tolerance: float = TOLERANCE) -> str:
+    """Grade one answer of agent.ask against the XBRL value, with the rule of phase 1.
+
+    A null value is the agent's abstention. The agent's answer is checked by its schema, not by
+    the checks of step 7, so it is never "rejected".
+    """
+    value = reply["value"]
+    return verdict({"found": value is not None, "number": value}, expected, tolerance)
+
+
+def diagnose(reply: dict, question: dict) -> str:
+    """Where a wrong or abstained answer went off, read from the tool calls.
+
+    no call       the model answered without calling a tool
+    wrong tool    it called get_ratio, or another tool, but never get_fact
+    tool error    every get_fact call failed
+    wrong concept get_fact was called with another label than the question's
+    wrong period  right label, another fiscal year
+    misread       the tool returned the right figure, the final answer differs
+    """
+    label = next(name for name, xbrl in CONCEPTS.items() if question["concept"] in xbrl)
+    calls = reply.get("tool_calls", [])
+    facts = [c for c in calls if c["name"] == "get_fact"]
+    if not calls:
+        return "no call"
+    if not facts:
+        return "wrong tool"
+    ok = [c for c in facts if not c["is_error"]]
+    if not ok:
+        return "tool error"
+    if not any(c["input"]["concept"] == label for c in ok):
+        return "wrong concept"
+    for c in ok:
+        if c["input"]["concept"] != label:
+            continue
+        year, end = c["input"].get("fiscal_year"), c["input"].get("period_end")
+        if year == question["fiscal_year"] or end == question["period_end"]:
+            return "misread"
+    return "wrong period"

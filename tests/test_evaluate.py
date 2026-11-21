@@ -1,6 +1,7 @@
 import pytest
 
 from finagent.evaluate import recall_at_k
+from finagent.evaluate import agent_verdict, diagnose
 
 # Three passages per company: with only two, a word found in one of them gets a zero
 # weight in BM25 and both passages tie. Rankings below were checked on 07/11/2026.
@@ -82,3 +83,30 @@ def test_verdict_abstained_and_rejected():
 def test_verdict_expected_zero():
     assert verdict(_result(number=0.0), 0) == "right"
     assert verdict(_result(number=5.0), 0) == "wrong"
+
+
+# --- Phase 2: grading the agent ---
+
+Q = {"concept": "Revenues", "fiscal_year": 2025, "period_end": "2025-01-26", "value": 130497000000}
+
+
+def _reply(value, *calls):
+    return {"value": value, "tool_calls": [{"name": n, "input": i, "is_error": e} for n, i, e in calls]}
+
+
+def test_agent_verdict_uses_the_rule_of_phase_1():
+    assert agent_verdict(_reply(130497000000), Q["value"]) == "right"
+    assert agent_verdict(_reply(130497000000 * 1.005), Q["value"]) == "right"   # within 1 %
+    assert agent_verdict(_reply(130497000000 * 1.02), Q["value"]) == "wrong"
+    assert agent_verdict(_reply(None), Q["value"]) == "abstained"
+
+
+def test_diagnose_reads_the_tool_calls():
+    fact = lambda **i: ("get_fact", {"company": "NVDA", **i}, False)
+    assert diagnose(_reply(1), Q) == "no call"
+    assert diagnose(_reply(1, ("get_ratio", {"ratio": "roe"}, False)), Q) == "wrong tool"
+    assert diagnose(_reply(1, ("get_fact", {"concept": "revenue", "fiscal_year": 2022}, True)), Q) == "tool error"
+    assert diagnose(_reply(1, fact(concept="net income", fiscal_year=2025)), Q) == "wrong concept"
+    assert diagnose(_reply(1, fact(concept="revenue", fiscal_year=2024)), Q) == "wrong period"
+    assert diagnose(_reply(1, fact(concept="revenue", fiscal_year=2025)), Q) == "misread"
+    assert diagnose(_reply(1, fact(concept="revenue", period_end="2025-01-26")), Q) == "misread"
