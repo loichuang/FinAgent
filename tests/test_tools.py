@@ -182,6 +182,8 @@ def test_optional_label_absent_is_zero():
     # Microsoft 2026: no commercial paper outstanding; Amazon: no dividend
     assert _value("MSFT", "commercial paper", "2026-06-30", 2026) == (0.0, "USD")
     assert _value("AMZN", "dividends paid", "2025-12-31", 2025) == (0.0, "USD")
+    # Amazon 2025: "no repurchases of our common stock in 2023, 2024, or 2025"
+    assert _value("AMZN", "share repurchases", "2025-12-31", 2025) == (0.0, "USD")
 
 
 def test_required_label_absent_is_an_error_never_zero():

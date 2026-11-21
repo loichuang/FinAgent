@@ -77,8 +77,8 @@ RATIO_CONCEPTS = {
     # Financing. Amazon pays no dividend: a true 0
     "dividends paid": {"xbrl": ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock"],
                        "optional": True},
-    # TODO before the financing group: one Amazon year is missing, check the 10-K text
-    "share repurchases": {"xbrl": ["PaymentsForRepurchaseOfCommonStock"], "optional": False},
+    # Amazon 2025 tags nothing: "no repurchases of our common stock in 2023, 2024, or 2025"
+    "share repurchases": {"xbrl": ["PaymentsForRepurchaseOfCommonStock"], "optional": True},
 }
 
 
