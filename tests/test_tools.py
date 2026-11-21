@@ -2,7 +2,7 @@ import pytest
 
 import finagent.tools as tools
 from finagent.questions import CONCEPTS, names, period_ends
-from finagent.tools import NOTES, RATIO_TOOL, RATIOS, TOOL, _resolve_period, get_fact, get_ratio
+from finagent.tools import FACT_TOOL, NOTES, RATIO_TOOL, RATIOS, _resolve_period, get_fact, get_ratio
 
 
 # Nvidia names its fiscal years after the January in which they end
@@ -90,7 +90,7 @@ def test_missing_optional_keys_are_accepted():
 # --- The tool card and the code share the same values ---
 
 def test_tool_card_lists_every_company_and_label():
-    properties = TOOL["input_schema"]["properties"]
+    properties = FACT_TOOL["input_schema"]["properties"]
     assert set(properties["company"]["enum"]) == set(names)
     assert properties["concept"]["enum"] == list(CONCEPTS)
 
@@ -166,4 +166,4 @@ def test_every_ratio_works_for_every_company_and_year():
 def test_ratio_card_lists_every_ratio_and_shares_the_period_arguments():
     properties = RATIO_TOOL["input_schema"]["properties"]
     assert properties["ratio"]["enum"] == list(RATIOS)
-    assert properties["fiscal_year"] == TOOL["input_schema"]["properties"]["fiscal_year"]
+    assert properties["fiscal_year"] == FACT_TOOL["input_schema"]["properties"]["fiscal_year"]

@@ -13,10 +13,10 @@ the benchmark (phase 2 measure, P2.6).
 """
 import json
 from finagent.llm import EFFORT, MAX_TOKENS, MODEL, LLMRefusal, client
-from finagent.tools import RATIO_TOOL, TOOL, get_fact, get_ratio
+from finagent.tools import FACT_TOOL, RATIO_TOOL, get_fact, get_ratio
 
 # The tools the model may call: the cards it reads, and the function behind each name
-TOOL_CARDS = [TOOL, RATIO_TOOL]
+TOOL_CARDS = [FACT_TOOL, RATIO_TOOL]
 TOOLS = {"get_fact": get_fact, "get_ratio": get_ratio}
 
 # What the model is told once, before the question. The RAG of phase 1 will join as a third

@@ -1,7 +1,7 @@
-"""The XBRL tool the model can call (phase 2, docs/phase2_design.md).
+"""The XBRL tools the model can call (phase 2, docs/phase2_design.md).
 
-The model never reads XBRL. It reads TOOL, fills in its arguments, and the code runs the
-lookup and sends the figure back.
+The model never reads XBRL. It reads the tool cards (FACT_TOOL, RATIO_TOOL), fills in their
+arguments, and the code runs the lookup or the computation and sends the result back.
 """
 
 from finagent.questions import CONCEPTS, names, period_ends
@@ -10,7 +10,7 @@ from finagent.xbrl import annual_values, unit
 
 # The tool card the model reads at every turn of the loop. The allowed values come from
 # questions.py, so the tool and the benchmark always share the same companies and labels.
-TOOL = {
+FACT_TOOL = {
     "name": "get_fact",
     "description": (
         "Get a figure that a company reported in its annual report (10-K) for one fiscal "
@@ -96,7 +96,7 @@ NOTES = {
     ("NVDA", "sbc to fcf"): _NVDA_CAPEX,
 }
 
-# The card of the second tool. Same company and period arguments as TOOL, so the model fills
+# The card of the second tool. Same company and period arguments as FACT_TOOL, so the model fills
 # both tools the same way; only the ratio list differs.
 RATIO_TOOL = {
     "name": "get_ratio",
@@ -114,14 +114,14 @@ RATIO_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "company": TOOL["input_schema"]["properties"]["company"],
+            "company": FACT_TOOL["input_schema"]["properties"]["company"],
             "ratio": {
                 "type": "string",
                 "enum": list(RATIOS),
                 "description": "The ratio asked for, picked from this list.",
             },
-            "period_end": TOOL["input_schema"]["properties"]["period_end"],
-            "fiscal_year": TOOL["input_schema"]["properties"]["fiscal_year"],
+            "period_end": FACT_TOOL["input_schema"]["properties"]["period_end"],
+            "fiscal_year": FACT_TOOL["input_schema"]["properties"]["fiscal_year"],
         },
         "required": ["company", "ratio"],
         "additionalProperties": False,
