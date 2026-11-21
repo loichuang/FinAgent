@@ -1,6 +1,6 @@
 # Phase 2 design: an XBRL tool the model can call
 
-Status: design notes, nothing implemented yet. Open choices are marked as such.
+Status: implemented (get_fact, get_ratio, the tool-use loop); measured in P2.6.
 
 ## Why
 
@@ -71,13 +71,21 @@ get_fact(company: str, concept: str, period_end: str = None, fiscal_year: int = 
 - Fiscal year is not the calendar year (Apple closes at the end of September)
 - Mapping the question's wording ("revenue", "total long-term debt") to the right concept is
   now the model's job: the held-out phrasing of phase 1 shows where this fails
+- "Absent" is not always 0, and XBRL tags vary by company: hand-written aliases and caveats do
+  not scale beyond a few companies
 
-## Open choices
+## Choices made
 
-- Ratios: the model chains `get_fact` calls and a computation tool, or a single
-  `get_ratio(company, ratio, fiscal_year)` with each definition fixed in Python. The second
-  makes fewer calls and pins each definition in tested code; the first composes any ratio
-- Routing: let the model choose between the tool and the RAG, or route in Python before the call
+- Ratios: a second tool, `get_ratio(company, ratio, period)`, with every formula fixed and tested
+  in Python (`ratios.py`). The model never does arithmetic: it names the ratio, Python reads the
+  inputs with the same readers as `get_fact` and returns the ratio, its definition, its inputs and
+  any caveat. 14 ratios: margins, FCF, ROE, ROIC, Du Pont, the working capital cycle, debt to
+  equity, payout, effective tax rate. Balance sheets are averaged for ROE, ROIC and Du Pont
+- Routing: no classifier. Every route is a tool and the model picks one; the RAG of phase 1 will
+  become a third tool for text questions
+- Absent facts: each label states whether absent means 0 (no commercial paper, no dividend,
+  checked in the 10-K) or an error. Nvidia's 2026 current securities exist but are missing from
+  `companyfacts` (custom concept): its 2026 ROIC fails rather than returning a wrong number
 
 ## Measure
 
