@@ -11,7 +11,13 @@ whole at every turn, and appends the model's turn and the tool results to it.
 The final answer follows ANSWER_SCHEMA: free text for a person, and the figure as a number for
 the benchmark (phase 2 measure, P2.6).
 """
+import hashlib
 import json
+from pathlib import Path
+
+import finagent.concepts
+import finagent.facts
+import finagent.ratios
 from finagent.llm import EFFORT, MAX_TOKENS, MODEL, LLMRefusal, client
 from finagent.facts import FACT_TOOL, get_fact
 from finagent.ratios import RATIO_TOOL, get_ratio
@@ -75,16 +81,48 @@ def run_tool(block) -> dict:
             "content": result["content"], "is_error": result["is_error"]}
 
 
-def ask(question: str, max_turns: int = 5) -> dict:
+# Every final answer is kept on disk, like the answers of llm.generate: running the benchmark
+# twice costs nothing, and the test set can be reread without calling the model again.
+CACHE = Path(__file__).resolve().parents[2] / "data" / "agent_cache.jsonl"
+
+
+def cache_key(question: str, max_turns: int) -> str:
+    """A hash of everything that shapes the answer: model, prompts, tool cards, and the code of
+    the tools themselves, so that a change in a formula or a concept is a new key, never a stale
+    hit."""
+    tool_code = "".join(Path(m.__file__).read_text(encoding="utf-8")
+                        for m in (finagent.concepts, finagent.facts, finagent.ratios))
+    payload = json.dumps({"model": MODEL, "effort": EFFORT, "system": SYSTEM, "tools": TOOL_CARDS,
+                          "schema": ANSWER_SCHEMA, "question": question, "max_turns": max_turns,
+                          "tool_code": tool_code}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _read_cache(path: Path) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as f:
+        return {(row := json.loads(line))["key"]: row for line in f if line.strip()}
+
+
+def ask(question: str, max_turns: int = 5, cache: Path | None = None) -> dict:
     """Answer a free-text question, calling the tools as many times as the model asks.
 
     Returns the final answer as a dict that follows ANSWER_SCHEMA, plus "tool_calls": every
-    call the model made, in order, with its arguments and whether it failed. Raises when the answer is
-    unusable (refusal, cut off, no final answer after max_turns): these are for the caller,
+    call the model made, in order, with its arguments and whether it failed, and "_usage": the
+    tokens of all the turns and whether the answer came from the cache. Raises when the answer
+    is unusable (refusal, cut off, no final answer after max_turns): these are for the caller,
     the model can do nothing about them.
     """
+    cache = cache or CACHE
+    key = cache_key(question, max_turns)
+    hit = _read_cache(cache).get(key)
+    if hit is not None:
+        return {**hit["answer"], "_usage": {**hit["usage"], "cached": True}}
+
     messages = [{"role": "user", "content": question}]
     tool_calls = []  # what the model asked for: shows whether a figure came from the tool
+    usage = {"model": MODEL, "input_tokens": 0, "output_tokens": 0, "turns": 0}
     for _ in range(max_turns):
         response = client().messages.create(
             model=MODEL,
@@ -94,13 +132,22 @@ def ask(question: str, max_turns: int = 5) -> dict:
             messages=messages,
             output_config={"effort": EFFORT, "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}}
         )
+        # Every turn is paid: the whole conversation is read again at each call
+        usage["input_tokens"] += response.usage.input_tokens
+        usage["output_tokens"] += response.usage.output_tokens
+        usage["turns"] += 1
         if response.stop_reason == "refusal":
             raise LLMRefusal(getattr(response.stop_details, "category", None))
         if response.stop_reason == "max_tokens":
             raise RuntimeError("answer cut off by max_tokens")
         if response.stop_reason == "end_turn":
             text = next(block.text for block in response.content if block.type == "text")
-            return {**json.loads(text), "tool_calls": tool_calls}
+            answer = {**json.loads(text), "tool_calls": tool_calls}
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            with cache.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"key": key, "question": question, "answer": answer,
+                                    "usage": usage}, ensure_ascii=False) + "\n")
+            return {**answer, "_usage": {**usage, "cached": False}}
 
         # tool_use: the model's whole turn first, then every result in a single user turn
         messages.append({"role": "assistant", "content": response.content})

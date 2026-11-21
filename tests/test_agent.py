@@ -20,7 +20,8 @@ def _tool_use(id, input, name="get_fact"):
 
 
 def _response(stop_reason, *content):
-    return Block(stop_reason=stop_reason, content=list(content), stop_details=None)
+    return Block(stop_reason=stop_reason, content=list(content), stop_details=None,
+                 usage=Block(input_tokens=1000, output_tokens=50))
 
 
 def _final(reply=FINAL):
@@ -41,12 +42,20 @@ class FakeClient:
 
 
 @pytest.fixture
-def fake(monkeypatch):
+def fake(monkeypatch, tmp_path):
+    # A fresh cache per test: a scripted answer must never land in the real cache
+    monkeypatch.setattr(agent, "CACHE", tmp_path / "agent_cache.jsonl")
+
     def install(*responses):
         client = FakeClient(*responses)
         monkeypatch.setattr(agent, "client", lambda: client)
         return client
     return install
+
+
+def _strip(reply):
+    """The answer without its usage, which the tests about the loop do not look at."""
+    return {k: v for k, v in reply.items() if k != "_usage"}
 
 
 # --- run_tool ---
@@ -73,13 +82,13 @@ def test_run_tool_never_raises_on_an_unknown_tool():
 
 def test_direct_answer_makes_one_call(fake):
     client = fake(_final())
-    assert ask("What was Nvidia's revenue for fiscal 2025?") == {**FINAL, "tool_calls": []}
+    assert _strip(ask("What was Nvidia's revenue for fiscal 2025?")) == {**FINAL, "tool_calls": []}
     assert len(client.sent) == 1
 
 
 def test_one_tool_round_then_answer(fake):
     client = fake(_response("tool_use", _tool_use("t1", NVDA_2025)), _final())
-    reply = ask("What was Nvidia's revenue for fiscal 2025?")
+    reply = _strip(ask("What was Nvidia's revenue for fiscal 2025?"))
     assert reply == {**FINAL, "tool_calls": [{"name": "get_fact", "input": NVDA_2025,
                                               "is_error": False}]}
 
@@ -146,3 +155,26 @@ def test_ratio_call_runs_get_ratio(fake):
     reply = ask("What was Nvidia's gross margin in fiscal 2025?")
     assert reply["tool_calls"] == [{"name": "get_ratio", "input": gross, "is_error": False}]
     assert "0.7499 (75.0%)" in client.sent[1][-1]["content"][0]["content"]
+
+
+def test_usage_adds_up_every_turn(fake):
+    fake(_response("tool_use", _tool_use("t1", NVDA_2025)), _final())
+    usage = ask("What was Nvidia's revenue for fiscal 2025?")["_usage"]
+    assert usage["turns"] == 2
+    assert usage["input_tokens"] == 2000 and usage["output_tokens"] == 100
+    assert usage["cached"] is False
+
+
+def test_second_ask_comes_from_the_cache_without_a_call(fake):
+    client = fake(_response("tool_use", _tool_use("t1", NVDA_2025)), _final())
+    first = ask("What was Nvidia's revenue for fiscal 2025?")
+    second = ask("What was Nvidia's revenue for fiscal 2025?")
+    assert len(client.sent) == 2  # the two turns of the first ask, none for the second
+    assert second["_usage"]["cached"] is True
+    assert _strip(second) == _strip(first)
+
+
+def test_a_change_in_the_tools_is_a_new_cache_key(monkeypatch):
+    before = agent.cache_key("q", 5)
+    monkeypatch.setattr(agent, "SYSTEM", agent.SYSTEM + " ")
+    assert agent.cache_key("q", 5) != before
