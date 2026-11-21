@@ -64,9 +64,9 @@ def test_run_tool_passes_a_tool_error_on():
 
 
 def test_run_tool_never_raises_on_an_unknown_tool():
-    result = run_tool(_tool_use("t3", {}, name="get_ratio"))
+    result = run_tool(_tool_use("t3", {}, name="search_reports"))
     assert result["is_error"] is True
-    assert "Available: get_fact" in result["content"]
+    assert "Available: get_fact, get_ratio" in result["content"]
 
 
 # --- ask ---
@@ -137,3 +137,12 @@ def test_refusal_and_cut_off_raise(fake):
     fake(_response("max_tokens"))
     with pytest.raises(RuntimeError, match="max_tokens"):
         ask("?")
+
+
+def test_ratio_call_runs_get_ratio(fake):
+    gross = {"company": "NVDA", "ratio": "gross margin", "fiscal_year": 2025}
+    client = fake(_response("tool_use", _tool_use("r1", gross, name="get_ratio")),
+                  _final({"answer": "75.0%", "value": 0.7499, "unit": "ratio", "fiscal_year": 2025}))
+    reply = ask("What was Nvidia's gross margin in fiscal 2025?")
+    assert reply["tool_calls"] == [{"name": "get_ratio", "input": gross, "is_error": False}]
+    assert "0.7499 (75.0%)" in client.sent[1][-1]["content"][0]["content"]

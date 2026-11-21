@@ -2,7 +2,7 @@ import pytest
 
 import finagent.tools as tools
 from finagent.questions import CONCEPTS, names, period_ends
-from finagent.tools import TOOL, _resolve_period, get_fact
+from finagent.tools import NOTES, RATIO_TOOL, RATIOS, TOOL, _resolve_period, get_fact, get_ratio
 
 
 # Nvidia names its fiscal years after the January in which they end
@@ -102,3 +102,68 @@ def test_every_label_has_a_value_for_every_company_and_year():
             for label in CONCEPTS:
                 result = get_fact(ticker, label, fiscal_year=fiscal_year)
                 assert result["is_error"] is False, result["content"]
+
+
+# --- get_ratio: computed in Python from its components ---
+
+
+def test_gross_margin_of_nvidia():
+    # (130497 - 32639) / 130497: the labels must reach the formula in its argument order
+    result = get_ratio("NVDA", "gross margin", fiscal_year=2025)
+    assert result["is_error"] is False
+    assert result["content"].startswith("Nvidia, gross margin, fiscal 2025 (ended 2025-01-26): "
+                                         "0.7499 (75.0%).")
+    assert "revenue 130497000000, cost of revenue 32639000000" in result["content"]
+
+
+def test_fcf_margin_and_sbc_to_fcf_of_nvidia():
+    fcf = 64089000000 - 3236000000
+    assert f"{fcf / 130497000000:.4f}" in get_ratio("NVDA", "fcf margin", fiscal_year=2025)["content"]
+    assert f"{4737000000 / fcf:.4f}" in get_ratio("NVDA", "sbc to fcf", fiscal_year=2025)["content"]
+
+
+def test_operating_margin_of_alphabet():
+    assert "0.3203 (32.0%)" in get_ratio("GOOGL", "operating margin", fiscal_year=2025)["content"]
+
+
+def test_ratio_without_period_is_flagged_as_latest():
+    assert "latest in FinAgent's data" in get_ratio("AAPL", "gross margin")["content"]
+
+
+def test_note_comes_with_the_ratio():
+    assert NOTES[("AMZN", "gross margin")] in get_ratio("AMZN", "gross margin", fiscal_year=2025)["content"]
+    assert "Note:" not in get_ratio("GOOGL", "gross margin", fiscal_year=2025)["content"]
+
+
+def test_unknown_period_is_an_error_result():
+    result = get_ratio("NVDA", "fcf margin", fiscal_year=2022)
+    assert result["is_error"] is True
+    assert "Available:" in result["content"]
+
+
+def test_missing_component_is_an_error_result(monkeypatch):
+    monkeypatch.setattr(tools, "annual_values", lambda ticker, concept: {})
+    result = get_ratio("NVDA", "gross margin", fiscal_year=2025)
+    assert result["is_error"] is True
+    assert "reports no revenue" in result["content"]
+
+
+def test_sbc_to_fcf_refuses_a_negative_free_cash_flow():
+    with pytest.raises(ValueError, match="not meaningful"):
+        RATIOS["sbc to fcf"]["formula"](10, 5, 8)
+
+
+def test_every_ratio_works_for_every_company_and_year():
+    for ticker, pairs in period_ends().items():
+        for _, fiscal_year in pairs:
+            for ratio in RATIOS:
+                result = get_ratio(ticker, ratio, fiscal_year=fiscal_year)
+                # A negative free cash flow is the only accepted refusal
+                assert result["is_error"] is False or "not meaningful" in result["content"], \
+                    result["content"]
+
+
+def test_ratio_card_lists_every_ratio_and_shares_the_period_arguments():
+    properties = RATIO_TOOL["input_schema"]["properties"]
+    assert properties["ratio"]["enum"] == list(RATIOS)
+    assert properties["fiscal_year"] == TOOL["input_schema"]["properties"]["fiscal_year"]

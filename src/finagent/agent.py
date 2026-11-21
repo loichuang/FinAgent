@@ -13,26 +13,31 @@ the benchmark (phase 2 measure, P2.6).
 """
 import json
 from finagent.llm import EFFORT, MAX_TOKENS, MODEL, LLMRefusal, client
-from finagent.tools import TOOL, get_fact
+from finagent.tools import RATIO_TOOL, TOOL, get_fact, get_ratio
 
-# The tools the model may call, by name. A second tool (get_ratio, P2.5) is one more entry.
-TOOLS = {"get_fact": get_fact}
+# The tools the model may call: the cards it reads, and the function behind each name
+TOOL_CARDS = [TOOL, RATIO_TOOL]
+TOOLS = {"get_fact": get_fact, "get_ratio": get_ratio}
 
-# What the model is told once, before the question. Phase 2 has a single tool: the RAG of
-# phase 1 joins as a second route in P2.5.
+# What the model is told once, before the question. The RAG of phase 1 will join as a third
+# tool for text questions (phase 3).
 SYSTEM = """You answer questions about the annual reports (10-K filings) of Apple, Amazon, \
 Alphabet, Microsoft and Nvidia.
 
 Rules:
 - For any reported figure (revenue, net income, assets, cash flows and the other items of the \
 get_fact tool), call get_fact. Never answer a figure from memory.
+- For a ratio of the get_ratio tool (gross margin, operating margin, fcf margin, sbc to fcf), \
+call get_ratio. Never compute a ratio yourself, even from figures you already have.
 - Copy the period from the question into the tool call as it is written: a date goes into \
 period_end, "fiscal N" goes into fiscal_year. Never turn one into the other.
 - Pick the concept whose meaning matches the question, not only its words.
 - If a call returns an error, read it: correct the arguments and call again if the error shows \
 how, otherwise give up on that figure.
-- In the final answer, copy the value exactly as get_fact returned it, in the same unit. Do \
-not round, rescale or compute it.
+- In the final answer, copy the value exactly as the tool returned it. Do not round, rescale \
+or compute it. Its unit is the one get_fact gives ("USD", "USD/shares", "shares"), or "ratio" \
+for get_ratio, whose value is the decimal (0.4663, not 46.6).
+- If the tool result carries a note, pass it on in the answer.
 - Always say which fiscal year the figure belongs to, and its end date.
 - If you could not get the figure, set value, unit and fiscal_year to null, and say so in \
 answer. A missing answer is better than a wrong one.
@@ -83,7 +88,7 @@ def ask(question: str, max_turns: int = 5) -> dict:
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=SYSTEM,
-            tools=[TOOL],
+            tools=TOOL_CARDS,
             messages=messages,
             output_config={"effort": EFFORT, "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}}
         )
