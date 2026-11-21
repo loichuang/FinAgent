@@ -134,8 +134,25 @@ def _du_pont(net_income, revenue, assets, equity) -> tuple[float, str]:
             f"{leverage:.4f}")
 
 
+# --- Working capital cycle, in days of revenue or of cost of revenue, year-end balances ---
+
+def _days_of(balance: float, flow: float) -> float:
+    """How many days of the yearly flow the balance sheet item stands for."""
+    return balance / flow * 365
+
+
+def _ccc(receivables, revenue, inventory, payables, cost_of_revenue) -> tuple[float, str]:
+    """Cash conversion cycle: days between paying suppliers and being paid by customers.
+    DSO + DIO - DPO; a negative cycle means suppliers finance the business."""
+    dso = _days_of(receivables, revenue)
+    dio = _days_of(inventory, cost_of_revenue)
+    dpo = _days_of(payables, cost_of_revenue)
+    return dso + dio - dpo, f"DSO {dso:.1f} + DIO {dio:.1f} - DPO {dpo:.1f}"
+
+
 # Ratio name -> the labels it needs, in the order of the formula's arguments, and optionally
-# the definition the result announces. A formula returns the ratio, or (ratio, detail).
+# the definition the result announces and its unit ("ratio" when not given). A formula
+# returns the ratio, or (ratio, detail).
 # Python computes every ratio: the model never does arithmetic.
 CFO, CAPEX = "net cash provided by operating activities", "capital expenditures"
 NI, EQUITY, ASSETS = "net income", "total stockholders' equity", "total assets"
@@ -163,6 +180,30 @@ RATIOS = {
                 "formula": _du_pont,
                 "definition": "ROE = net income / revenue x revenue / average assets x average "
                               "assets / average equity"},
+    "dso": {"labels": ["accounts receivable", "revenue"], "formula": _days_of, "unit": "days",
+            "definition": "year-end accounts receivable / revenue x 365"},
+    "dio": {"labels": ["inventory", "cost of revenue"], "formula": _days_of, "unit": "days",
+            "definition": "year-end inventory / cost of revenue x 365"},
+    "dpo": {"labels": ["accounts payable", "cost of revenue"], "formula": _days_of,
+            "unit": "days", "definition": "year-end accounts payable / cost of revenue x 365"},
+    "ccc": {"labels": ["accounts receivable", "revenue", "inventory", "accounts payable",
+                       "cost of revenue"],
+            "formula": _ccc, "unit": "days", "definition": "DSO + DIO - DPO"},
+}
+
+# Each ratio in words, for the tool card: the model maps the wording of a question to a name
+ABOUT = {
+    "gross margin": "gross profit as a share of revenue",
+    "operating margin": "operating income as a share of revenue",
+    "fcf margin": "free cash flow as a share of revenue",
+    "sbc to fcf": "stock-based compensation as a share of free cash flow",
+    "roe": "return on equity",
+    "roic": "return on invested capital",
+    "du pont": "return on equity split into net margin, asset turnover and equity multiplier",
+    "dso": "days sales outstanding: how long customers take to pay",
+    "dio": "days inventory outstanding: how long inventory sits before it is sold",
+    "dpo": "days payables outstanding: how long the company takes to pay its suppliers",
+    "ccc": "cash conversion cycle, DSO + DIO - DPO",
 }
 
 # Caveats the model must pass on with the figure: the ratio is computed right, but read alone
@@ -170,12 +211,17 @@ RATIOS = {
 _NVDA_CAPEX = ("Nvidia's capital expenditures include intangible assets (its 10-K line is "
                "\"purchases related to property and equipment and intangible assets\"), so its "
                "free cash flow is computed on a wider base than the other companies'.")
+_AMZN_COGS = ("Amazon books fulfillment outside cost of revenue, so days computed on its cost "
+              "of revenue are not comparable with the other companies'.")
 _AMZN_FCF = ("Free cash flow here is operating cash flow minus gross purchases of property and "
              "equipment. Amazon's own free cash flow subtracts them net of proceeds from sales "
              "and incentives, so it differs from the figure Amazon publishes.")
 NOTES = {
     ("AMZN", "gross margin"): "Amazon books fulfillment outside cost of revenue, so its gross "
                               "margin is not comparable with the other companies'.",
+    ("AMZN", "dio"): _AMZN_COGS,
+    ("AMZN", "dpo"): _AMZN_COGS,
+    ("AMZN", "ccc"): _AMZN_COGS,
     ("AMZN", "fcf margin"): _AMZN_FCF,
     ("AMZN", "sbc to fcf"): _AMZN_FCF,
     ("NVDA", "fcf margin"): _NVDA_CAPEX,
@@ -188,13 +234,13 @@ RATIO_TOOL = {
     "name": "get_ratio",
     "description": (
         "Get a financial ratio of a company for one fiscal year, computed from the figures of "
-        "its annual report (10-K): gross margin, operating margin, free cash flow margin "
-        "(fcf margin) and stock-based compensation as a share of free cash flow (sbc to fcf). "
-        "Call it whenever the question asks for one of these ratios, instead of fetching the "
-        "figures with get_fact and computing the ratio yourself: never do the arithmetic. "
-        "The result gives the ratio, the figures it was computed from and any caveat; pass "
-        "the caveat on. Fill the period exactly as for get_fact: period_end when the question "
-        "gives a date, fiscal_year when it gives a fiscal year, neither when it gives none."
+        "its annual report (10-K). The ratios available are listed in `ratio`. Call it "
+        "whenever the question asks for one of them, instead of fetching the figures with "
+        "get_fact and computing the ratio yourself: never do the arithmetic. The result gives "
+        "the ratio, its definition, the figures it was computed from and any caveat; pass the "
+        "caveat on. Ratios come as decimals (0.4663 for 46.6 %), cycle ratios in days. Fill "
+        "the period exactly as for get_fact: period_end when the question gives a date, "
+        "fiscal_year when it gives a fiscal year, neither when it gives none."
     ),
     "strict": True,
     "input_schema": {
@@ -204,7 +250,8 @@ RATIO_TOOL = {
             "ratio": {
                 "type": "string",
                 "enum": list(RATIOS),
-                "description": "The ratio asked for, picked from this list.",
+                "description": "The ratio asked for: "
+                               + "; ".join(f"{name} ({ABOUT[name]})" for name in RATIOS) + ".",
             },
             "period_end": FACT_TOOL["input_schema"]["properties"]["period_end"],
             "fiscal_year": FACT_TOOL["input_schema"]["properties"]["fiscal_year"],
@@ -319,7 +366,8 @@ def get_ratio(company: str, ratio: str, period_end: str = None, fiscal_year: int
     value, detail = result if isinstance(result, tuple) else (result, None)
     detail = f" = {detail}" if detail else ""
     definition = f" Definition: {spec['definition']}." if "definition" in spec else ""
+    shown = f"{value:.1f} days" if spec.get("unit") == "days" else f"{value:.4f} ({value:.1%})"
     return {"content": f"{names[company]}, {ratio}, fiscal {year} (ended {period}){latest}: "
-                       f"{value:.4f} ({value:.1%}){detail}. Components in USD: {parts}."
+                       f"{shown}{detail}. Components in USD: {parts}."
                        f"{definition}{note}",
             "is_error": False}

@@ -154,9 +154,11 @@ def test_sbc_to_fcf_refuses_a_negative_free_cash_flow():
         RATIOS["sbc to fcf"]["formula"](10, 5, 8)
 
 
-# Known gaps, each checked in the 10-K: the ratio must fail cleanly, never return a number.
+# Ratios that must fail cleanly, never return a number, each checked in the 10-K.
 # Nvidia 2026 reports 51,951 of current securities under a concept companyfacts leaves out.
-KNOWN_GAPS = {("NVDA", 2026, "roic")}
+# Alphabet holds no inventory: DIO and the cash conversion cycle do not apply to it.
+KNOWN_GAPS = ({("NVDA", 2026, "roic")}
+              | {("GOOGL", year, ratio) for year in (2023, 2024, 2025) for ratio in ("dio", "ccc")})
 
 
 def test_every_ratio_works_for_every_company_and_year():
@@ -253,3 +255,33 @@ def test_roic_of_nvidia_2026_fails_instead_of_returning_a_wrong_number():
 def test_tax_rate_rebuilds_pre_tax_income():
     from finagent.tools import _tax_rate
     assert _tax_rate(80, 20) == 0.2
+
+
+# --- Working capital cycle ---
+
+def test_cycle_in_days_for_apple():
+    # Receivables 39,777 / revenue 416,161 x 365; payables 69,860 / cost of revenue 220,960 x 365
+    assert "34.9 days" in get_ratio("AAPL", "dso", fiscal_year=2025)["content"]
+    assert "115.4 days" in get_ratio("AAPL", "dpo", fiscal_year=2025)["content"]
+
+
+def test_ccc_is_dso_plus_dio_minus_dpo():
+    content = get_ratio("AAPL", "ccc", fiscal_year=2025)["content"]
+    # Negative: Apple's suppliers finance it
+    assert "-71.1 days = DSO 34.9 + DIO 9.4 - DPO 115.4" in content
+
+
+def test_alphabet_has_no_inventory_cycle():
+    result = get_ratio("GOOGL", "dio", fiscal_year=2025)
+    assert result["is_error"] is True and "no inventory" in result["content"]
+
+
+def test_amazon_cycle_carries_its_cost_of_revenue_caveat():
+    assert "fulfillment" in get_ratio("AMZN", "dpo", fiscal_year=2025)["content"]
+
+
+def test_every_ratio_is_described_on_the_card():
+    from finagent.tools import ABOUT
+    assert set(ABOUT) == set(RATIOS)
+    card = RATIO_TOOL["input_schema"]["properties"]["ratio"]["description"]
+    assert all(name in card for name in RATIOS)
