@@ -285,3 +285,28 @@ def test_every_ratio_is_described_on_the_card():
     assert set(ABOUT) == set(RATIOS)
     card = RATIO_TOOL["input_schema"]["properties"]["ratio"]["description"]
     assert all(name in card for name in RATIOS)
+
+
+# --- Financing and tax ---
+
+def test_debt_to_equity_of_apple_matches_the_hand_computation():
+    # Commercial paper 7.98 + current debt 12.35 + non-current debt 78.33 = 98.7, over 73.7
+    assert "1.3380 (133.8%)" in get_ratio("AAPL", "debt to equity", fiscal_year=2025)["content"]
+
+
+def test_payout_counts_dividends_and_buybacks():
+    # Apple: (15,421 + 90,711) / 112,010
+    assert "0.9475 (94.8%)" in get_ratio("AAPL", "payout ratio", fiscal_year=2025)["content"]
+    # Amazon pays no dividend and bought back nothing in 2025: a true 0, not an error
+    amazon = get_ratio("AMZN", "payout ratio", fiscal_year=2025)
+    assert amazon["is_error"] is False and "0.0000 (0.0%)" in amazon["content"]
+
+
+def test_payout_on_a_loss_is_refused():
+    with pytest.raises(ValueError, match="not meaningful"):
+        RATIOS["payout ratio"]["formula"](10, 10, -5)
+
+
+def test_effective_tax_rate_of_apple():
+    # 20,719 / (112,010 + 20,719): the rate inside Apple's ROIC
+    assert "0.1561 (15.6%)" in get_ratio("AAPL", "effective tax rate", fiscal_year=2025)["content"]

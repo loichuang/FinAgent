@@ -150,6 +150,23 @@ def _ccc(receivables, revenue, inventory, payables, cost_of_revenue) -> tuple[fl
     return dso + dio - dpo, f"DSO {dso:.1f} + DIO {dio:.1f} - DPO {dpo:.1f}"
 
 
+# --- Financing ---
+
+def _debt_to_equity(long_term_debt, commercial_paper, short_term_borrowings, equity) -> float:
+    """Financial debt over equity, at year end: how much of the business the lenders fund
+    next to the shareholders. Same debt as in ROIC; leases are not counted."""
+    return (long_term_debt + commercial_paper + short_term_borrowings) / equity
+
+
+def _payout(dividends, buybacks, net_income) -> float:
+    """Share of net income handed back to shareholders as dividends and buybacks. Above 1,
+    the company returns more than it earns. Meaningless on a loss, so refused."""
+    if net_income <= 0:
+        raise ValueError(f"net income is {net_income:.0f} USD, not positive: the payout ratio "
+                         f"is not meaningful.")
+    return (dividends + buybacks) / net_income
+
+
 # Ratio name -> the labels it needs, in the order of the formula's arguments, and optionally
 # the definition the result announces and its unit ("ratio" when not given). A formula
 # returns the ratio, or (ratio, detail).
@@ -189,6 +206,18 @@ RATIOS = {
     "ccc": {"labels": ["accounts receivable", "revenue", "inventory", "accounts payable",
                        "cost of revenue"],
             "formula": _ccc, "unit": "days", "definition": "DSO + DIO - DPO"},
+    "debt to equity": {"labels": ["long-term debt including current portion", "commercial paper",
+                                  "short-term borrowings", EQUITY],
+                       "formula": _debt_to_equity,
+                       "definition": "year-end financial debt (long-term debt including its "
+                                     "current portion, commercial paper, short-term borrowings) / "
+                                     "year-end equity; leases are not counted as debt"},
+    "payout ratio": {"labels": ["dividends paid", "share repurchases", NI],
+                     "formula": _payout,
+                     "definition": "(dividends paid + share repurchases) / net income"},
+    "effective tax rate": {"labels": [NI, "income tax expense"],
+                           "formula": lambda ni, tax: _tax_rate(ni, tax),
+                           "definition": "income tax / (net income + income tax)"},
 }
 
 # Each ratio in words, for the tool card: the model maps the wording of a question to a name
@@ -204,6 +233,9 @@ ABOUT = {
     "dio": "days inventory outstanding: how long inventory sits before it is sold",
     "dpo": "days payables outstanding: how long the company takes to pay its suppliers",
     "ccc": "cash conversion cycle, DSO + DIO - DPO",
+    "debt to equity": "financial debt over shareholders' equity",
+    "payout ratio": "share of net income returned through dividends and share buybacks",
+    "effective tax rate": "income tax as a share of pre-tax income",
 }
 
 # Caveats the model must pass on with the figure: the ratio is computed right, but read alone
