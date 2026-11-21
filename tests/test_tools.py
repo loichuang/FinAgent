@@ -154,14 +154,22 @@ def test_sbc_to_fcf_refuses_a_negative_free_cash_flow():
         RATIOS["sbc to fcf"]["formula"](10, 5, 8)
 
 
+# Known gaps, each checked in the 10-K: the ratio must fail cleanly, never return a number.
+# Nvidia 2026 reports 51,951 of current securities under a concept companyfacts leaves out.
+KNOWN_GAPS = {("NVDA", 2026, "roic")}
+
+
 def test_every_ratio_works_for_every_company_and_year():
     for ticker, pairs in period_ends().items():
         for _, fiscal_year in pairs:
             for ratio in RATIOS:
                 result = get_ratio(ticker, ratio, fiscal_year=fiscal_year)
-                # A negative free cash flow is the only accepted refusal
-                assert result["is_error"] is False or "not meaningful" in result["content"], \
-                    result["content"]
+                if (ticker, fiscal_year, ratio) in KNOWN_GAPS:
+                    assert result["is_error"] is True, result["content"]
+                else:
+                    # A ratio to a negative free cash flow is the only accepted refusal
+                    assert result["is_error"] is False or "not meaningful" in result["content"], \
+                        result["content"]
 
 
 def test_ratio_card_lists_every_ratio_and_shares_the_period_arguments():
@@ -208,3 +216,40 @@ def test_average_is_the_mean_of_opening_and_closing():
     closing = _value("AAPL", "total stockholders' equity", "2025-09-27", 2025)[0]
     opening = _value("AAPL", "total stockholders' equity", "2024-09-28", 2024)[0]
     assert _component("AAPL", avg("total stockholders' equity"), "2025-09-27", 2025) == (closing + opening) / 2
+
+
+# --- Profitability ---
+
+def test_roic_of_apple_matches_the_hand_computation():
+    # By hand: NOPAT 133.1 x (1 - 0.156) = 112.3, average invested capital (98.4 + 117.7) / 2
+    # = 108.0, so about 104 %
+    assert "1.0392 (103.9%)" in get_ratio("AAPL", "roic", fiscal_year=2025)["content"]
+
+
+def test_roic_states_its_definition():
+    assert "Definition: EBIT x (1 - tax" in get_ratio("AAPL", "roic", fiscal_year=2025)["content"]
+
+
+def test_roe_is_net_income_over_average_equity():
+    # 112,010 / ((73,733 + 56,950) / 2)
+    assert "1.7142 (171.4%)" in get_ratio("AAPL", "roe", fiscal_year=2025)["content"]
+
+
+def test_du_pont_factors_multiply_to_the_roe():
+    for ticker in ("AAPL", "MSFT", "NVDA"):
+        roe = get_ratio(ticker, "roe", fiscal_year=2025)["content"]
+        du_pont = get_ratio(ticker, "du pont", fiscal_year=2025)["content"]
+        # Same value, written the same way, and the three factors come with it
+        assert roe.split(": ")[1].split(" ")[0] == du_pont.split(": ")[1].split(" ")[0]
+        assert "net margin" in du_pont and "equity multiplier" in du_pont
+
+
+def test_roic_of_nvidia_2026_fails_instead_of_returning_a_wrong_number():
+    result = get_ratio("NVDA", "roic", fiscal_year=2026)
+    assert result["is_error"] is True
+    assert "current marketable securities" in result["content"]
+
+
+def test_tax_rate_rebuilds_pre_tax_income():
+    from finagent.tools import _tax_rate
+    assert _tax_rate(80, 20) == 0.2
