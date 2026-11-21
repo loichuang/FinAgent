@@ -43,15 +43,26 @@ The API is stateless: each call resends the whole conversation.
 N calls leave 2N messages, and every call rereads the whole history, so each round costs more
 than the previous one.
 
-## Tool contract (draft)
+## Tool contract (decided 20 Nov.)
 
 ```
-get_fact(company: str, concept: str, fiscal_year: int)
+get_fact(company: str, concept: str, period_end: str = None, fiscal_year: int = None)
 ```
 
-- `company` restricted to the 15 tickers of the corpus (`enum` in the schema)
-- Unknown company, concept or year: return an explicit "not found" result, never raise, so the
-  model can say it does not have the figure
+- `company` restricted to the 5 tickers of the corpus (`enum` in the schema)
+- `concept` is a human label from `CONCEPTS` (`enum`), never an XBRL name: the model maps the
+  wording of the question to a label, Python maps the label to its XBRL concepts and aliases
+- The period is copied from the question, never converted: `period_end` when it gives a date,
+  `fiscal_year` when it gives "fiscal N", in the company's own naming (Nvidia's fiscal 2025
+  ends on 26 January 2025). Python resolves the other one from the corpus
+- No period: the latest fiscal year present in FinAgent's data, always named in the result
+  ("fiscal 2025, ended 2025-09-27, latest in FinAgent's data"), so a figure that a newer 10-K
+  has replaced is dated, never presented as current. Both given and inconsistent: an error
+  result saying so
+- Unknown company, concept or year: return an explicit "not found" result (`is_error`), never
+  raise, so the model can correct its arguments or say it does not have the figure
+- At scale, `company` becomes free text resolved by one lookup function (SEC
+  `company_tickers.json`) and the facts move to a database; nothing else changes
 
 ## Known traps
 
