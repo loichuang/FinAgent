@@ -73,13 +73,15 @@ def test_run_tool_never_raises_on_an_unknown_tool():
 
 def test_direct_answer_makes_one_call(fake):
     client = fake(_final())
-    assert ask("What was Nvidia's revenue for fiscal 2025?") == FINAL
+    assert ask("What was Nvidia's revenue for fiscal 2025?") == {**FINAL, "tool_calls": []}
     assert len(client.sent) == 1
 
 
 def test_one_tool_round_then_answer(fake):
     client = fake(_response("tool_use", _tool_use("t1", NVDA_2025)), _final())
-    assert ask("What was Nvidia's revenue for fiscal 2025?") == FINAL
+    reply = ask("What was Nvidia's revenue for fiscal 2025?")
+    assert reply == {**FINAL, "tool_calls": [{"name": "get_fact", "input": NVDA_2025,
+                                              "is_error": False}]}
 
     # The second call resends the question, the model's turn and the tool result
     question, assistant, user = client.sent[1]
@@ -102,6 +104,15 @@ def test_parallel_calls_come_back_in_a_single_user_turn(fake):
     assert [r["tool_use_id"] for r in user["content"]] == ["a", "b"]
     assert "416161000000" in user["content"][0]["content"]
     assert "130497000000" in user["content"][1]["content"]
+
+
+def test_tool_calls_record_failed_attempts(fake):
+    wrong = {"company": "NVDA", "concept": "revenue", "fiscal_year": 2022}
+    fake(_response("tool_use", _tool_use("t1", wrong)),
+         _response("tool_use", _tool_use("t2", NVDA_2025)),
+         _final())
+    calls = ask("What was Nvidia's revenue for fiscal 2025?")["tool_calls"]
+    assert [(c["input"]["fiscal_year"], c["is_error"]) for c in calls] == [(2022, True), (2025, False)]
 
 
 def test_abstention_comes_back_as_null(fake):

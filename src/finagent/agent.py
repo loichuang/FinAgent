@@ -71,11 +71,13 @@ def run_tool(block) -> dict:
 def ask(question: str, max_turns: int = 5) -> dict:
     """Answer a free-text question, calling the tools as many times as the model asks.
 
-    Returns the final answer as a dict that follows ANSWER_SCHEMA. Raises when the answer is
+    Returns the final answer as a dict that follows ANSWER_SCHEMA, plus "tool_calls": every
+    call the model made, in order, with its arguments and whether it failed. Raises when the answer is
     unusable (refusal, cut off, no final answer after max_turns): these are for the caller,
     the model can do nothing about them.
     """
     messages = [{"role": "user", "content": question}]
+    tool_calls = []  # what the model asked for: shows whether a figure came from the tool
     for _ in range(max_turns):
         response = client().messages.create(
             model=MODEL,
@@ -91,12 +93,15 @@ def ask(question: str, max_turns: int = 5) -> dict:
             raise RuntimeError("answer cut off by max_tokens")
         if response.stop_reason == "end_turn":
             text = next(block.text for block in response.content if block.type == "text")
-            return json.loads(text)
+            return {**json.loads(text), "tool_calls": tool_calls}
 
         # tool_use: the model's whole turn first, then every result in a single user turn
         messages.append({"role": "assistant", "content": response.content})
-        results = [run_tool(block) for block in response.content if block.type == "tool_use"]
+        blocks = [block for block in response.content if block.type == "tool_use"]
+        results = [run_tool(block) for block in blocks]
         messages.append({"role": "user", "content": results})
+        tool_calls += [{"name": b.name, "input": b.input, "is_error": r["is_error"]}
+                       for b, r in zip(blocks, results)]
 
     # Only reached when no turn ended with a final answer
     raise RuntimeError(f"no final answer after {max_turns} turns")
