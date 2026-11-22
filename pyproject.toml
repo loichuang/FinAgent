@@ -6,6 +6,7 @@ dependencies = ["requests", "python-dotenv", "beautifulsoup4", "lxml", "rank-bm2
 
 [project.optional-dependencies]
 dev = ["pytest"]
+demo = ["streamlit"]
 
 [build-system]
 requires = ["setuptools>=61"]
