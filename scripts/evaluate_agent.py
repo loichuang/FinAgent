@@ -7,6 +7,10 @@ Measured on the tuning set by default; the test set is measured once, at the end
     .venv/bin/python scripts/evaluate_agent.py --limit 20     # the 20 first questions only
     .venv/bin/python scripts/evaluate_agent.py                # the 360 tuning questions
     .venv/bin/python scripts/evaluate_agent.py --test         # test set, once
+    .venv/bin/python scripts/evaluate_agent.py --workers 4    # fewer questions at a time
+
+Questions run in parallel threads (8 by default): each one mostly waits for the API, so the
+threads overlap their waits. Results are kept in the order of the questions.
 
 Answers are cached (data/agent_cache.jsonl): a second run costs nothing. One line per question
 is written to data/agent_answers_<split>.jsonl. When the RAG of phase 1 has been run on the same
@@ -15,6 +19,7 @@ questions (scripts/evaluate_answers.py), the report puts both side by side.
 import argparse
 import json
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from finagent import agent
@@ -30,6 +35,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--test", action="store_true", help="measure the test set instead of tuning")
 parser.add_argument("--limit", type=int, help="only the first N questions")
 parser.add_argument("--dry-run", action="store_true", help="estimate the cost, do not call the model")
+parser.add_argument("--workers", type=int, default=8, help="questions sent at the same time")
 args = parser.parse_args()
 split = "test" if args.test else "tuning"
 
@@ -37,7 +43,8 @@ with open(DATA / "questions.jsonl", encoding="utf-8") as f:
     questions = [q for line in f if line.strip() and (q := json.loads(line))["split"] == split]
 if args.limit:
     questions = questions[: args.limit]
-print(f"Split: {split}, {len(questions)} questions, model {agent.MODEL}, effort {agent.EFFORT}\n")
+print(f"Split: {split}, {len(questions)} questions, model {agent.MODEL}, effort {agent.EFFORT}, "
+      f"{args.workers} at a time\n")
 
 # ---------------------------------------------------------------------------
 # Dry run: how many questions would be paid for, and roughly how much
@@ -58,23 +65,32 @@ if args.dry_run:
 # ---------------------------------------------------------------------------
 # The run
 # ---------------------------------------------------------------------------
-rows, cost, tokens_in, tokens_out = [], 0.0, 0, 0
-for i, q in enumerate(questions, 1):
+def run(q: dict) -> tuple[dict, dict | None]:
+    """One question, in its own thread: the graded row, and the usage when tokens were paid."""
     try:
         reply = agent.ask(q["question"])
         usage = reply.pop("_usage")
         grade = agent_verdict(reply, q["value"])
         where = None if grade == "right" else diagnose(reply, q)
-        if not usage["cached"]:
-            tokens_in += usage["input_tokens"]
-            tokens_out += usage["output_tokens"]
-            cost += (usage["input_tokens"] * PRICE_IN + usage["output_tokens"] * PRICE_OUT) / 1e6
+        paid = None if usage["cached"] else usage
     except Exception as error:  # a refusal or an API error must not stop 360 questions
-        reply, grade, where = {"error": f"{type(error).__name__}: {error}"}, "error", "error"
-    rows.append({"id": q["id"], "question": q["question"], "expected": q["value"],
-                 "verdict": grade, "diagnosis": where, **reply})
-    if i % 20 == 0 or i == len(questions):
-        print(f"  {i}/{len(questions)}  spent so far ${cost:.4f}")
+        reply, grade, where, paid = {"error": f"{type(error).__name__}: {error}"}, "error", "error", None
+    row = {"id": q["id"], "question": q["question"], "expected": q["value"],
+           "verdict": grade, "diagnosis": where, **reply}
+    return row, paid
+
+
+rows, cost, tokens_in, tokens_out = [], 0.0, 0, 0
+with ThreadPoolExecutor(max_workers=args.workers) as pool:
+    # map hands the questions to the threads and gives the results back in question order
+    for i, (row, paid) in enumerate(pool.map(run, questions), 1):
+        rows.append(row)
+        if paid:
+            tokens_in += paid["input_tokens"]
+            tokens_out += paid["output_tokens"]
+            cost += (paid["input_tokens"] * PRICE_IN + paid["output_tokens"] * PRICE_OUT) / 1e6
+        if i % 20 == 0 or i == len(questions):
+            print(f"  {i}/{len(questions)}  spent so far ${cost:.4f}")
 
 with open(DATA / f"agent_answers_{split}.jsonl", "w", encoding="utf-8") as f:
     for row in rows:

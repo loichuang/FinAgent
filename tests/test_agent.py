@@ -224,3 +224,28 @@ def test_a_change_in_the_loop_is_a_new_cache_key(monkeypatch):
     before = agent.cache_key("q", 5)
     monkeypatch.setattr(agent.inspect, "getsource", lambda f: "changed loop")
     assert agent.cache_key("q", 5) != before
+
+
+# --- Questions in parallel threads ---
+
+def test_parallel_asks_write_a_readable_cache(monkeypatch, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    class AlwaysFinal:
+        """A client that answers every call at once: safe to share between threads."""
+        def __init__(self):
+            self.messages = self
+
+        def create(self, **kwargs):
+            return _final()
+
+    cache = tmp_path / "agent_cache.jsonl"
+    monkeypatch.setattr(agent, "CACHE", cache)
+    monkeypatch.setattr(agent, "client", lambda: AlwaysFinal())
+    questions = [f"question {i}" for i in range(200)]
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        replies = list(pool.map(ask, questions))
+    assert all(r["value"] == FINAL["value"] for r in replies)
+    # Every line is whole JSON, one per question, and all are found again as cache hits
+    assert len(agent._read_cache(cache)) == 200
+    assert all(ask(q)["_usage"]["cached"] for q in questions)

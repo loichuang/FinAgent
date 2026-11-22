@@ -14,6 +14,7 @@ the benchmark (phase 2 measure, P2.6).
 import hashlib
 import inspect
 import json
+import threading
 from pathlib import Path
 
 import finagent.concepts
@@ -95,6 +96,9 @@ NUDGE = "You have not called a tool yet: call get_fact or get_ratio before answe
 # Every final answer is kept on disk, like the answers of llm.generate: running the benchmark
 # twice costs nothing, and the test set can be reread without calling the model again.
 CACHE = Path(__file__).resolve().parents[2] / "data" / "agent_cache.jsonl"
+# Questions may run in parallel threads (scripts/evaluate_agent.py): one thread at a time reads
+# or appends the cache file, so that no thread reads a line another one is still writing
+_CACHE_LOCK = threading.Lock()
 
 
 def cache_key(question: str, max_turns: int) -> str:
@@ -128,7 +132,8 @@ def ask(question: str, max_turns: int = 5, cache: Path | None = None) -> dict:
     """
     cache = cache or CACHE
     key = cache_key(question, max_turns)
-    hit = _read_cache(cache).get(key)
+    with _CACHE_LOCK:
+        hit = _read_cache(cache).get(key)
     if hit is not None:
         return {**hit["answer"], "_usage": {**hit["usage"], "cached": True}}
 
@@ -164,10 +169,12 @@ def ask(question: str, max_turns: int = 5, cache: Path | None = None) -> dict:
                 nudged = True
                 continue
             answer = {**reply, "tool_calls": tool_calls}
-            cache.parent.mkdir(parents=True, exist_ok=True)
-            with cache.open("a", encoding="utf-8") as f:
-                f.write(json.dumps({"key": key, "question": question, "answer": answer,
-                                    "usage": usage}, ensure_ascii=False) + "\n")
+            line = json.dumps({"key": key, "question": question, "answer": answer,
+                               "usage": usage}, ensure_ascii=False) + "\n"
+            with _CACHE_LOCK:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                with cache.open("a", encoding="utf-8") as f:
+                    f.write(line)
             return {**answer, "_usage": {**usage, "cached": False}}
 
         # tool_use: the model's whole turn first, then every result in a single user turn
