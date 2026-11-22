@@ -1,11 +1,46 @@
 # FinAgent
 
-FinAgent answers questions about US public companies from their annual reports (10-K), cites
-the passage each answer comes from, and measures its own errors against the official XBRL
-financial data published by the SEC.
+FinAgent answers questions about US public companies from their annual reports (10-K) and
+measures its own errors against the official XBRL financial data published by the SEC.
 
-**Status:** phase 1 done, a retrieval-augmented pipeline measured on a held-out test set. Next,
-phase 2: an XBRL tool the model can call.
+**Status:** phase 2 done. An agent that calls two tools, one reading XBRL facts and one computing
+financial ratios in Python, measured on the same held-out test set as the retrieval-augmented
+pipeline of phase 1. Next, phase 3: text questions (risks, strategy) and evaluation in CI.
+
+## Results (phase 2, test set, run once)
+
+Same benchmark as phase 1: 480 test questions never seen while tuning, 360 in the three tuning
+phrasings and 120 in a fourth one. An answer is **right** when it is within 1 % of the XBRL value.
+Phase 1 was run again on these exact questions, since phase 2 froze a new held-out phrasing.
+
+| Questions | Agent (phase 2) | RAG (phase 1) |
+|---|---|---|
+| All (480) | **100 %** right, precision **100 %** | 94.6 % right, precision 98.3 % |
+| Phrasings seen while tuning (360) | 100 % | 95.0 % |
+| Held-out phrasing (120) | 100 % | 93.3 % |
+
+- The agent called `get_fact` on all 480 questions, copied the period as the question states
+  it (a date or a fiscal year, Nvidia's fiscal 2025 ending in January 2025), and never altered
+  the figure the tool returned. The RAG loses its points where retrieval misses the passage:
+  17 % right on those 29 questions, 99.6 % on the other 451
+- **What 100 % does not mean.** The tool and the answer key both read XBRL, so a right concept
+  and a right period give the exact figure by construction. And the benchmark asks with the
+  tool's own labels: in all 480 questions, the concept the model chose is written word for word
+  in the question. This benchmark measures tool use, periods and faithful copying; it does not
+  measure the mapping of financial vocabulary ("sales", "top line", "debt") to a concept, which
+  needs questions written in other words. The ratios are checked by unit tests (for instance
+  Apple's fiscal 2025 ROIC, 103.9 %, matches a computation by hand), not by this benchmark
+- Cost of the test run: $0.32 for 480 questions with Claude Haiku 5.5
+
+**What tuning changed.** On the first 20 tuning questions, 9 were abstained without any tool
+call, mostly fiscal years filed after the model's training data (Alphabet 2025, Nvidia 2026),
+which it took for unpublished. Two general rules fixed it: the data goes beyond the model's
+knowledge, and a figure is missing only when the tool says so. One false start remained on 360
+questions: with the answer format forced on every turn, a sentence the model meant to write
+before calling the tool came out as a final answer, `{"answer": "pending", "value": null}`. The
+loop now sends such an answer back once. On the test, it happened once, and was recovered.
+
+## Results (phase 1, test set, run once)
 
 ## Results (phase 1, test set, run once)
 
@@ -58,7 +93,38 @@ On the tuning set (360 questions), each fix was measured on its own:
   label: `(44,477)` on "Additions to property and equipment" is a cash outflow of 44,477, and
   XBRL reports capital expenditures as a positive amount. The prompt now says so
 
-## How it works
+## How the agent works (phase 2)
+
+```mermaid
+flowchart LR
+    Q[Question] --> M["Claude Haiku 5.5"]
+    M -->|tool_use| T1["get_fact<br/>label + period"]
+    M -->|tool_use| T2["get_ratio<br/>14 ratios in Python"]
+    T1 --> X[("XBRL facts")]
+    T2 --> X
+    T1 -->|tool_result| M
+    T2 -->|tool_result| M
+    M --> A["JSON answer<br/>value, unit, fiscal year<br/>+ the tool calls made"]
+```
+
+- **The model never reads XBRL.** It reads two tool cards and fills in their arguments: a
+  company, a label taken from a list (`revenue`, `long-term debt`...) and the period exactly as
+  the question gives it. Python resolves the period, tries each XBRL name of the label (Apple and
+  Nvidia report revenue under different concepts) and sends back the figure, or an error that
+  says what exists
+- **The model never does arithmetic.** `get_ratio` computes margins, free cash flow, ROE, ROIC,
+  Du Pont, the working capital cycle, debt to equity, payout and effective tax rate, with
+  balance sheets averaged where the definition needs it. The result states its definition, its
+  inputs and caveats checked in the 10-K text (Amazon books fulfillment outside cost of revenue)
+- **A missing figure is never a zero by accident.** Each input says whether its absence means 0
+  (no commercial paper outstanding, checked in the filing) or an error: Nvidia's fiscal 2026
+  current securities are on its balance sheet but missing from the SEC's `companyfacts` file, so
+  its 2026 ROIC fails instead of returning a wrong number
+- **The loop** keeps the conversation, runs every tool call of a turn, sends all the results
+  back in one turn, and stops after five turns. Answers are cached on disk, keyed by the prompts,
+  the tool cards and the code of the tools and of the loop
+
+## How the RAG works (phase 1)
 
 ```mermaid
 flowchart TB
@@ -146,7 +212,7 @@ The rules rely on what the 10-K format imposes, not on one company's habits:
 cp .env.example .env   # then fill in your contact address and Anthropic API key
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                                   # 78 tests, no API call
+.venv/bin/pytest                                   # 146 tests, no API call
 .venv/bin/python scripts/download.py               # 10-K filings to data/raw/, XBRL facts to data/xbrl/
 .venv/bin/python scripts/clean.py
 .venv/bin/python scripts/split.py
@@ -157,15 +223,19 @@ python3 -m venv .venv
 .venv/bin/python scripts/ask.py --dry-run          # one question end to end, stops before the API call
 .venv/bin/python scripts/evaluate_answers.py --dry-run   # retrieval only, no API call
 .venv/bin/python scripts/evaluate_answers.py       # accuracy on the tuning set (--test once, at the end)
+.venv/bin/python scripts/evaluate_agent.py --dry-run     # phase 2 agent: cost estimate, no API call
+.venv/bin/python scripts/evaluate_agent.py         # agent on the tuning set, 8 questions at a time
+.venv/bin/python -c "from finagent.agent import ask; print(ask('What was Apple gross margin in fiscal 2025?'))"
 ```
 
 ## Plan
 
 1. **Data**: 10-K filings and XBRL facts from EDGAR. *Done*
 2. **RAG on numeric questions**, evaluated against XBRL. *Done, results above*
-3. **XBRL tool**: let the model query XBRL directly for figures, and measure the gain on a new
-   benchmark whose held-out phrasing is checked against each concept before any run
-4. **Text questions and CI**: risk factors and strategy questions, evaluation run on every change
+3. **XBRL tools**: an agent that reads XBRL facts and computes ratios, measured against phase 1
+   on the same test set. *Done, results above*
+4. **Text questions and CI**: risk factors and strategy questions through the RAG as a third
+   tool, questions written in other words than the tool's labels, evaluation run on every change
 
 ## License
 
