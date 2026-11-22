@@ -15,12 +15,27 @@ def show_answer(answer: dict) -> None:
     turns, cached).
     """
     st.write(answer["answer"])
-    st.markdown(f"**Used Tool:** {answer["tool_calls"]}")
-    st.caption(f"Ressources used : {answer["_usage"]}")
+    # The proof that the figure comes from the data: one readable line per tool call, folded
+    calls = answer["tool_calls"]
+    with st.expander(f"Tool calls ({len(calls)})"):
+        for call in calls:
+            arguments = " · ".join(f"{key}: {value}" for key, value in call["input"].items())
+            failed = " · *failed*" if call["is_error"] else ""   # only a failed call is marked
+            st.markdown(f"`{call['name']}` · {arguments}{failed}")
+    # What the answer cost, in small grey print
+    usage = answer["_usage"]
+    cost = (f"{usage['turns']} turns · {usage['input_tokens']:,} input tokens · "
+            f"{usage['output_tokens']:,} output tokens")
+    if usage["cached"]:
+        cost += " · from cache"
+    st.caption(cost)
 
 
-# 1. Title, and the history kept across reruns
-st.title("FinAgent - Your Assistant in Finance to read annual report")
+# 1. Tab, title, what can be asked, and the history kept across reruns
+st.set_page_config(page_title="FinAgent", page_icon=":material/bar_chart:")  # first st call
+st.title("FinAgent")
+st.caption("Figures and ratios from the 10-K filings of Apple, Amazon, Alphabet, Microsoft "
+           "and Nvidia. Each question is answered on its own.")
 if "history" not in st.session_state:
     st.session_state.history = []
 
@@ -33,7 +48,7 @@ for role, content in st.session_state.history:
             show_answer(content)     # content is the dict of ask()
 
 # 3. Read the chat box: a question only on the rerun where it was sent
-question = st.chat_input("What is your question")
+question = st.chat_input("Ask for a figure or a ratio, e.g. Apple's ROIC in fiscal 2024")
 
 # 4. A new question: show it, ask the agent once (spinner, try/except), show the answer
 if question:

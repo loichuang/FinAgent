@@ -7,6 +7,20 @@ measures its own errors against the official XBRL financial data published by th
 financial ratios in Python, measured on the same held-out test set as the retrieval-augmented
 pipeline of phase 1. Next, phase 3: text questions (risks, strategy) and evaluation in CI.
 
+## Demo
+
+A local Streamlit page: type a question, the agent calls its tools, and the answer comes with
+the calls it made (folded) and the tokens it used.
+
+![FinAgent answering a question on Apple's ROIC in fiscal 2024, with the get_ratio call it made](docs/demo.png)
+
+```bash
+.venv/bin/pip install -e ".[demo]"
+.venv/bin/python -m streamlit run app.py
+```
+
+Each question is answered on its own: the agent does not remember the previous ones.
+
 ## Results (phase 2, test set, run once)
 
 Same benchmark as phase 1: 480 test questions never seen while tuning, 360 in the three tuning
