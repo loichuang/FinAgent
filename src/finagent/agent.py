@@ -12,6 +12,7 @@ The final answer follows ANSWER_SCHEMA: free text for a person, and the figure a
 the benchmark (phase 2 measure, P2.6).
 """
 import hashlib
+import inspect
 import json
 from pathlib import Path
 
@@ -86,17 +87,23 @@ def run_tool(block) -> dict:
             "content": result["content"], "is_error": result["is_error"]}
 
 
+# Sent once when the model ends its turn without calling any tool and without a figure: with the
+# answer format forced on every turn, a sentence it meant to write before calling a tool ("let
+# me look it up") comes out as a final answer, {"answer": "pending", "value": null, ...}.
+NUDGE = "You have not called a tool yet: call get_fact or get_ratio before answering."
+
 # Every final answer is kept on disk, like the answers of llm.generate: running the benchmark
 # twice costs nothing, and the test set can be reread without calling the model again.
 CACHE = Path(__file__).resolve().parents[2] / "data" / "agent_cache.jsonl"
 
 
 def cache_key(question: str, max_turns: int) -> str:
-    """A hash of everything that shapes the answer: model, prompts, tool cards, and the code of
-    the tools themselves, so that a change in a formula or a concept is a new key, never a stale
-    hit."""
+    """A hash of everything that shapes the answer: model, prompts, tool cards, the code of the
+    tools and the code of the loop itself, so that a change in a formula, a concept or the loop
+    is a new key, never a stale hit."""
     tool_code = "".join(Path(m.__file__).read_text(encoding="utf-8")
                         for m in (finagent.concepts, finagent.facts, finagent.ratios))
+    tool_code += inspect.getsource(ask) + inspect.getsource(run_tool)
     payload = json.dumps({"model": MODEL, "effort": EFFORT, "system": SYSTEM, "tools": TOOL_CARDS,
                           "schema": ANSWER_SCHEMA, "question": question, "max_turns": max_turns,
                           "tool_code": tool_code}, sort_keys=True, ensure_ascii=False)
@@ -127,6 +134,7 @@ def ask(question: str, max_turns: int = 5, cache: Path | None = None) -> dict:
 
     messages = [{"role": "user", "content": question}]
     tool_calls = []  # what the model asked for: shows whether a figure came from the tool
+    nudged = False   # the false start is corrected once; a second one is the model's answer
     usage = {"model": MODEL, "input_tokens": 0, "output_tokens": 0, "turns": 0}
     for _ in range(max_turns):
         response = client().messages.create(
@@ -147,7 +155,15 @@ def ask(question: str, max_turns: int = 5, cache: Path | None = None) -> dict:
             raise RuntimeError("answer cut off by max_tokens")
         if response.stop_reason == "end_turn":
             text = next(block.text for block in response.content if block.type == "text")
-            answer = {**json.loads(text), "tool_calls": tool_calls}
+            reply = json.loads(text)
+            # A false start: no tool called yet and no figure. Ask once for the tool, never
+            # after a call (a null after a tool error is a real abstention)
+            if not tool_calls and reply["value"] is None and not nudged:
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": NUDGE})
+                nudged = True
+                continue
+            answer = {**reply, "tool_calls": tool_calls}
             cache.parent.mkdir(parents=True, exist_ok=True)
             with cache.open("a", encoding="utf-8") as f:
                 f.write(json.dumps({"key": key, "question": question, "answer": answer,

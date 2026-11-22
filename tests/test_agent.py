@@ -127,7 +127,8 @@ def test_tool_calls_record_failed_attempts(fake):
 def test_abstention_comes_back_as_null(fake):
     empty = {"answer": "FinAgent has no fiscal 2022 data for Nvidia.",
              "value": None, "unit": None, "fiscal_year": None}
-    fake(_final(empty))
+    # Without a tool call it is first sent back once; the second null is accepted
+    fake(_final(empty), _final(empty))
     assert ask("What was Nvidia's revenue for fiscal 2022?")["value"] is None
 
 
@@ -177,4 +178,49 @@ def test_second_ask_comes_from_the_cache_without_a_call(fake):
 def test_a_change_in_the_tools_is_a_new_cache_key(monkeypatch):
     before = agent.cache_key("q", 5)
     monkeypatch.setattr(agent, "SYSTEM", agent.SYSTEM + " ")
+    assert agent.cache_key("q", 5) != before
+
+
+# --- The false start: a "pending" answer before any tool call ---
+
+PENDING = {"answer": "pending", "value": None, "unit": None, "fiscal_year": None}
+
+
+def test_false_start_is_sent_back_once_then_the_tool_is_called(fake):
+    client = fake(_final(PENDING),
+                  _response("tool_use", _tool_use("t1", NVDA_2025)),
+                  _final())
+    reply = ask("How much revenue did Nvidia report for fiscal 2025?")
+    assert _strip(reply) == {**FINAL, "tool_calls": [{"name": "get_fact", "input": NVDA_2025,
+                                                      "is_error": False}]}
+    # The second call carries the false start and the nudge
+    assert client.sent[1][-1] == {"role": "user", "content": agent.NUDGE}
+    assert reply["_usage"]["turns"] == 3
+
+
+def test_abstention_after_a_tool_call_is_accepted_without_nudge(fake):
+    missing = {"company": "NVDA", "concept": "revenue", "fiscal_year": 2022}
+    client = fake(_response("tool_use", _tool_use("t1", missing)), _final(PENDING))
+    reply = ask("How much revenue did Nvidia report for fiscal 2022?")
+    assert reply["value"] is None and reply["tool_calls"][0]["is_error"] is True
+    assert len(client.sent) == 2  # no third call
+
+
+def test_second_false_start_is_accepted_and_the_loop_stops(fake):
+    client = fake(_final(PENDING), _final(PENDING))
+    reply = ask("What is the weather in Espoo?")
+    assert reply["value"] is None and reply["tool_calls"] == []
+    assert len(client.sent) == 2
+
+
+def test_a_figure_without_a_tool_call_is_not_nudged(fake):
+    # A number from memory is graded as it is, and diagnose reports it as "no call"
+    client = fake(_final())
+    ask("What was Nvidia's revenue for fiscal 2025?")
+    assert len(client.sent) == 1
+
+
+def test_a_change_in_the_loop_is_a_new_cache_key(monkeypatch):
+    before = agent.cache_key("q", 5)
+    monkeypatch.setattr(agent.inspect, "getsource", lambda f: "changed loop")
     assert agent.cache_key("q", 5) != before
