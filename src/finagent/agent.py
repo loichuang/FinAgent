@@ -76,16 +76,24 @@ ANSWER_SCHEMA = {
 def run_tool(block) -> dict:
     """Run one tool_use block and wrap its result as a tool_result block.
 
-    The result carries the id of the tool_use it answers. Never raises: an unknown tool comes
-    back as an error result, so the loop keeps running and the model reads what went wrong.
+    The result carries the id of the tool_use it answers. Never raises: an unknown tool, wrong
+    arguments or a tool that fails come back as an error result, so the loop keeps running and
+    the model reads what went wrong.
     """
     if block.name not in TOOLS:
         return {"type": "tool_result", "tool_use_id": block.id,
                 "content": f"Unknown tool {block.name}. Available: {', '.join(TOOLS)}.",
                 "is_error": True}
-    result = TOOLS[block.name](**block.input)
-    return {"type": "tool_result", "tool_use_id": block.id,
-            "content": result["content"], "is_error": result["is_error"]}
+    try:
+        result = TOOLS[block.name](**block.input)
+        return {"type": "tool_result", "tool_use_id": block.id,
+                "content": result["content"], "is_error": result["is_error"]}
+    except Exception as error:
+        # Wrong arguments (TypeError) or a case the tool did not foresee: the model reads the
+        # error and corrects its call, instead of the whole question crashing
+        return {"type": "tool_result", "tool_use_id": block.id,
+                "content": f"The tool {block.name} failed with {type(error).__name__}: {error}",
+                "is_error": True}
 
 
 # Sent once when the model ends its turn without calling any tool and without a figure: with the
