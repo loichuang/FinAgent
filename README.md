@@ -225,8 +225,8 @@ The rules rely on what the 10-K format imposes, not on one company's habits:
 ```bash
 cp .env.example .env   # then fill in your contact address and Anthropic API key
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                                   # 146 tests, no API call
+.venv/bin/pip install -e ".[dev,demo,dense]"
+.venv/bin/pytest                                   # 148 tests, no API call
 .venv/bin/python scripts/download.py               # 10-K filings to data/raw/, XBRL facts to data/xbrl/
 .venv/bin/python scripts/clean.py
 .venv/bin/python scripts/split.py
