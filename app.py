@@ -1,10 +1,35 @@
-"""Local demo of FinAgent: ask a question about the 10-K filings, see the answer and the tool calls.
+"""Demo of FinAgent: ask a question about the 10-K filings, see the answer and the tool calls.
 
-Run: .venv/bin/python -m streamlit run app.py
+Run locally: .venv/bin/python -m streamlit run app.py
+Online on Streamlit Community Cloud, with the API key as the secret LLM_API_KEY.
 """
+import threading
+from datetime import date
+
 import streamlit as st
 
 from finagent.agent import ask
+from finagent.demo import DEMO_CACHE, EXAMPLES, QUESTIONS_PER_DAY, QUESTIONS_PER_VISITOR
+
+
+@st.cache_resource
+def daily_count() -> dict:
+    """One counter shared by every visitor: cache_resource builds this dict once per server
+    process, while session_state is per browser tab. It restarts at 0 when the app restarts,
+    which the spend limit of the Anthropic Console covers."""
+    return {"day": date.today(), "count": 0, "lock": threading.Lock()}
+
+
+def take_daily_slot() -> bool:
+    """Count one free-text question for today, or say False when the day's quota is used."""
+    counter = daily_count()
+    with counter["lock"]:                       # two visitors may ask at the same instant
+        if counter["day"] != date.today():      # a new day: the quota starts again
+            counter["day"], counter["count"] = date.today(), 0
+        if counter["count"] >= QUESTIONS_PER_DAY:
+            return False
+        counter["count"] += 1
+        return True
 
 
 def show_answer(answer: dict) -> None:
@@ -38,6 +63,14 @@ st.caption("Figures and ratios from the 10-K filings of Apple, Amazon, Alphabet,
            "and Nvidia. Each question is answered on its own.")
 if "history" not in st.session_state:
     st.session_state.history = []
+    st.session_state.asked = 0      # free-text questions of this visitor
+
+# Example questions: their answers are committed (data/demo_cache.jsonl), so they cost nothing
+# and do not count against the limits
+example = None
+for column, text in zip(st.columns(len(EXAMPLES)), EXAMPLES):
+    if column.button(text, width="stretch"):
+        example = text
 
 # 2. Draw the history again: the rerun has wiped the page
 for role, content in st.session_state.history:
@@ -47,17 +80,32 @@ for role, content in st.session_state.history:
         else:
             show_answer(content)     # content is the dict of ask()
 
-# 3. Read the chat box: a question only on the rerun where it was sent
-question = st.chat_input("Ask for a figure or a ratio, e.g. Apple's ROIC in fiscal 2024")
+# 3. Read the chat box: a question only on the rerun where it was sent. Closed once this
+# visitor has used their free-text questions
+left = QUESTIONS_PER_VISITOR - st.session_state.asked
+question = st.chat_input(
+    f"Ask for a figure or a ratio, e.g. Apple's ROIC in fiscal 2024 ({left} questions left)"
+    if left > 0 else "No questions left in this session: try the examples above",
+    disabled=left <= 0)
 
-# 4. A new question: show it, ask the agent once (spinner, try/except), show the answer
-if question:
+# 4. A new question: show it, ask the agent once (spinner, try/except), show the answer.
+# An example is read from its cache; a free-text question first takes a slot of the day's
+# quota, counted before the call so that a failed call is counted too
+if example or question:
+    question = example or question
     with st.chat_message("user"):
         st.write(question)
     with st.chat_message("assistant"):
         try:
-            with st.spinner("The agent is reading the filings..."):
-                answer = ask(question)       # the only call to the model, once per question
+            if example:
+                answer = ask(question, cache=DEMO_CACHE)
+            elif not take_daily_slot():
+                raise RuntimeError("the demo has answered its questions for today, "
+                                   "come back tomorrow or try the examples above")
+            else:
+                st.session_state.asked += 1
+                with st.spinner("The agent is reading the filings..."):
+                    answer = ask(question)   # the only call to the model, once per question
         except Exception as error:
             # A refusal, an answer cut off, no answer after the last turn: said, not crashed
             st.error(f"No answer: {type(error).__name__}: {error}")
@@ -66,4 +114,6 @@ if question:
             # 5. Keep the question and the answer in the history, for the next reruns
             st.session_state.history.append(("user", question))
             st.session_state.history.append(("assistant", answer))
+            # Draw the page again from the history, so that the chat box shows the new count
+            st.rerun()
 

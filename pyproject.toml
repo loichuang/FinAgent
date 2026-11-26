@@ -2,11 +2,14 @@
 name = "finagent"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["requests", "python-dotenv", "beautifulsoup4", "lxml", "rank-bm25", "numpy", "sentence-transformers", "anthropic"]
+dependencies = ["requests", "python-dotenv", "beautifulsoup4", "lxml", "rank-bm25", "numpy", "anthropic"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
 demo = ["streamlit"]
+# The dense retrieval of phase 1 (embeddings): torch is heavy, and the online demo does not
+# need it until the RAG becomes a tool (phase 3)
+dense = ["sentence-transformers"]
 
 [build-system]
 requires = ["setuptools>=61"]

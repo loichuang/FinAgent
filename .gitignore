@@ -6,6 +6,11 @@ data/*
 # Except the held-out phrasing: committed before any measurement, so its date proves
 # it was written before the results were known
 !data/heldout_template.txt
+# And what the online demo reads: the corpus frozen on 29 Oct., the one every result was
+# measured on (public SEC data), and the cached answers of the example questions
+!data/xbrl/
+!data/passages.jsonl
+!data/demo_cache.jsonl
 
 # Python
 __pycache__/

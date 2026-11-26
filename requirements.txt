@@ -1,0 +1,4 @@
+# Read by Streamlit Community Cloud, which installs the package and the demo extra.
+# Editable (-e): the code stays in src/, where its paths to data/ are written relative to it.
+# Locally, install with: .venv/bin/pip install -e ".[dev,demo,dense]"
+-e .[demo]

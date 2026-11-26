@@ -15,7 +15,7 @@ the calls it made (folded) and the tokens it used.
 ![FinAgent answering a question on Apple's ROIC in fiscal 2024, with the get_ratio call it made](docs/demo.png)
 
 ```bash
-.venv/bin/pip install -e ".[demo]"
+.venv/bin/pip install -e ".[dev,demo,dense]"
 .venv/bin/python -m streamlit run app.py
 ```
 
