@@ -5,14 +5,20 @@ measures its own errors against the official XBRL financial data published by th
 
 **Status:** phase 2 done. An agent that calls two tools, one reading XBRL facts and one computing
 financial ratios in Python, measured on the same held-out test set as the retrieval-augmented
-pipeline of phase 1. Next, phase 3: text questions (risks, strategy) and evaluation in CI.
+pipeline of phase 1. Online demo. Next, phase 3: text questions (risks, strategy) and evaluation in CI.
 
 ## Demo
 
-A local Streamlit page: type a question, the agent calls its tools, and the answer comes with
-the calls it made (folded) and the tokens it used.
+**Online: [finagent-demo.streamlit.app](https://finagent-demo.streamlit.app/)**
+
+Type a question, the agent calls its tools, and the answer comes with the calls it made (folded)
+and the tokens it used. Three example questions are answered from a cache and cost nothing; free
+questions are limited to 5 per visitor and 100 per day, under a monthly spend limit on the API.
+The online demo runs on the corpus every result below was measured on, committed in `data/`.
 
 ![FinAgent answering a question on Apple's ROIC in fiscal 2024, with the get_ratio call it made](docs/demo.png)
+
+To run it locally, with your own key in `.env`:
 
 ```bash
 .venv/bin/pip install -e ".[dev,demo,dense]"
